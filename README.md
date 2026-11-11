@@ -49,6 +49,11 @@ collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=
 loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(collection)
 ```
 
+Elements whose pixel grid is not the coordinate system (an H&E image registered to the slide, say, or a
+`morphology_focus` stored in microns) are resampled once into a common grid when the collection is written, the way
+`spatialdata.rasterize` samples them, so they are read as fast as any other array. `target_unit_to_pixels` sets the
+resolution of that grid (1 pixel per unit by default).
+
 ## Getting started
 
 Please refer to the [documentation][],

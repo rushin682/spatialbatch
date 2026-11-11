@@ -53,6 +53,7 @@ class _Source:
     channels: int | None  # ``None`` for labels
     dtype: np.dtype
     fallback: Callable[[int], np.ndarray] | None = None
+    origin: tuple[int, int] = (0, 0)  # pixel (x, y) of the tile grid that is pixel (0, 0) of `array`
 
     @property
     def signature(self) -> tuple[str, int | None, np.dtype]:
@@ -72,7 +73,8 @@ class _SpatialdataTile:
     """Produce one tile with :func:`spatialdata.rasterize` / :func:`spatialdata.bounding_box_query`, as ``XeniumDataset`` does.
 
     This is the path for elements whose pixel grid is not the coordinate system (a rotated H&E image, say) or when
-    resampling is requested: correct for every transformation, but one spatialdata call per tile.
+    resampling is requested: correct for every transformation, but one spatialdata call per tile. A
+    :class:`~spatialbatch.SpatialDatasetCollection` resamples such elements once when it is written instead.
     A class rather than a closure so that the loader can be pickled into :class:`torch.utils.data.DataLoader` workers.
     """
 
@@ -121,7 +123,9 @@ class Loader(AnnbatchLoader):
     Tiles that are a plain slice of the stored array (images in the pixel grid of the coordinate system, which is the
     case for Xenium ``morphology_focus``, ``morphology_mip`` and the labels) are read as a few large windows and
     cropped in memory. This yields exactly the pixels :func:`spatialdata.rasterize` returns (verified against
-    ``XeniumDataset``), without resampling. Other elements, such as a rotated H&E image, are tiled with spatialdata.
+    ``XeniumDataset``), without resampling. Other elements, such as a rotated H&E image, are tiled with spatialdata
+    when loading in place, one call per tile; a :class:`~spatialbatch.SpatialDatasetCollection` resamples them once
+    when written, after which they are read like any other array.
     Where a tile crosses the border of the array the missing pixels are `pad_value`.
 
     Parameters
@@ -406,7 +410,7 @@ class Loader(AnnbatchLoader):
         assert source.array is not None
         th, tw = geometry.height, geometry.width
         height, width = source.array.shape[-2:]
-        y0, x0 = geometry.y0[rows], geometry.x0[rows]
+        y0, x0 = geometry.y0[rows] - source.origin[1], geometry.x0[rows] - source.origin[0]
         cy0, cy1 = np.clip(y0, 0, height), np.clip(y0 + th, 0, height)
         cx0, cx1 = np.clip(x0, 0, width), np.clip(x0 + tw, 0, width)
         inside = (cy1 > cy0) & (cx1 > cx0)
