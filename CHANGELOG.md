@@ -12,4 +12,7 @@ and this project adheres to [Semantic Versioning][].
 
 ### Added
 
-- Basic tool, preprocessing and plotting functions
+- `Loader`, an `annbatch.Loader` that streams cell tiles of images and labels with the expression and annotations of
+  the cell from SpatialData stores, reproducing `spatialstream`'s `XeniumDataset`.
+- `RandomSampler`, built on `annbatch.samplers.RandomSampler` with defaults for pixel tiles.
+- `SpatialDatasetCollection` and `write_sharded_sdata`: spatially sorted (Morton order), sharded copies of the stores.

@@ -1,39 +1,46 @@
 # API
 
-## Preprocessing
-
 ```{eval-rst}
-.. module:: spatialbatch.pp
+.. module:: spatialbatch
 .. currentmodule:: spatialbatch
-
-.. autosummary::
-    :toctree: generated
-
-    pp.basic_preproc
-    pp.elaborate_example
 ```
 
-## Tools
+## Loader
 
 ```{eval-rst}
-.. module:: spatialbatch.tl
-.. currentmodule:: spatialbatch
-
 .. autosummary::
     :toctree: generated
 
-    tl.basic_tool
+    Loader
 ```
 
-## Plotting
+## Collections
 
 ```{eval-rst}
-.. module:: spatialbatch.pl
-.. currentmodule:: spatialbatch
-
 .. autosummary::
     :toctree: generated
 
-    pl.basic_plot
-    pl.BasicClass
+    SpatialDatasetCollection
+    write_sharded_sdata
+```
+
+## Samplers
+
+The abstract {class}`annbatch.abc.Sampler` is shared with annbatch, as is {class}`annbatch.samplers.SequentialSampler`.
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated
+
+    samplers.RandomSampler
+    abc.Sampler
+```
+
+## Types
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated
+
+    types.SpatialLoaderOutput
 ```

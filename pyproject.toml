@@ -22,9 +22,23 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
 ]
 dependencies = [
-  "anndata",
+  "annbatch[zarrs]",
+  "anndata>=0.12.9",
+  "dask>=2025.9",
+  "geopandas",
+  "numba",
+  "numpy",
+  "pandas>=2.2.2",
+  "scipy>1.15",
   # for debug logging (referenced from the issue template)
   "session-info2",
+  "spatialdata>=0.6.1",
+  "tqdm",
+  "xarray",
+  "zarr>=3.1.4",
+]
+optional-dependencies.torch = [
+  "torch>=2",
 ]
 # https://docs.pypi.org/project_metadata/#project-urls
 urls.Documentation = "https://spatialbatch.readthedocs.io/"
@@ -39,7 +53,8 @@ dev = [
 test = [
   "coverage>=7.10",
   "pytest",
-  "pytest-cov",     # For VS Code’s coverage functionality
+  "pytest-cov",          # For VS Code’s coverage functionality
+  "spatialbatch[torch]",
 ]
 doc = [
   "ipykernel",
@@ -77,6 +92,10 @@ envs.hatch-test.overrides.matrix.deps.env-vars = [
 ]
 envs.hatch-test.dependency-groups = [ "dev", "test" ]
 
+[tool.uv]
+# annbatch is a hard dependency: develop against the sibling checkout.
+sources.annbatch = { path = "../annbatch", editable = true }
+
 [tool.ruff]
 line-length = 120
 src = [ "src" ]
@@ -91,6 +110,7 @@ lint.select = [
   "F",      # Errors detected by Pyflakes
   "I",      # isort
   "RUF100", # Report unused noqa directives
+  "TC",     # Typing imports
   "TID",    # flake8-tidy-imports
   "UP",     # pyupgrade
   "W",      # Warning detected by Pycodestyle
@@ -111,6 +131,7 @@ lint.ignore = [
   "E741", # allow I, O, l as variable names -> I is the identity matrix
 ]
 lint.per-file-ignores."*/__init__.py" = [ "F401" ]
+lint.per-file-ignores."benchmarks/*" = [ "B007", "D" ]
 lint.per-file-ignores."docs/*" = [ "I" ]
 lint.per-file-ignores."tests/*" = [ "D" ]
 lint.pydocstyle.convention = "numpy"
@@ -118,6 +139,9 @@ lint.pydocstyle.convention = "numpy"
 [tool.pytest]
 addopts = [
   "--import-mode=importlib", # allow using test files with same name
+]
+markers = [
+  "slow: parity tests that read the real SpatialData stores in sddb-downloads/",
 ]
 strict = true
 testpaths = [ "tests" ]

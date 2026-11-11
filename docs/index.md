@@ -7,9 +7,9 @@
 :maxdepth: 1
 
 api.md
+zarr-configuration.md
 changelog.md
 contributing.md
 references.md
 
-notebooks/example
 ```
