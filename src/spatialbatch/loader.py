@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -135,6 +136,10 @@ class Loader(AnnbatchLoader):
         See :class:`spatialstream.dataloaders.XeniumDataset`.
     tile_dim_in_units
         Side of the tile in units of the coordinate system. All tiles of a loader must have the same integer size.
+    crop_px
+        Side in pixels of the tiles cut from a collection written by :func:`~spatialbatch.write_collection_dataset`,
+        centred on ``obsm["spatial"]``. Required for such collections, ignored with a warning for collections written
+        by :func:`~spatialbatch.write_sharded_sdata`, whose tiles are fixed. Unused by :meth:`add_sdata`.
     rasterize
         Mirror of ``XeniumDataset``: whether tiles are produced with :func:`spatialdata.rasterize` (``True``) or
         :func:`spatialdata.bounding_box_query` (``False``). It only matters on the spatialdata path.
@@ -201,6 +206,7 @@ class Loader(AnnbatchLoader):
         labels: Sequence[str] = (),
         tile_scale: float = 1.0,
         tile_dim_in_units: float | None = None,
+        crop_px: int | None = None,
         rasterize: bool = False,
         rasterize_kwargs: Mapping[str, Any] = MappingProxyType({}),
         pad_value: float = 0,
@@ -242,7 +248,9 @@ class Loader(AnnbatchLoader):
         if not images and not labels:
             raise ValueError("At least one of `images` and `labels` must be given.")
         self._image_names, self._label_names = tuple(images), tuple(labels)
-        self._tile_scale, self._tile_dim_in_units = tile_scale, tile_dim_in_units
+        if crop_px is not None and crop_px < 1:
+            raise ValueError(f"`crop_px` must be a positive number of pixels, got {crop_px}.")
+        self._tile_scale, self._tile_dim_in_units, self._crop_px = tile_scale, tile_dim_in_units, crop_px
         self._rasterize, self._rasterize_kwargs = rasterize, dict(rasterize_kwargs)
         self._pad_value = pad_value
         self._annotations = [return_annotations] if isinstance(return_annotations, str) else return_annotations
@@ -346,12 +354,28 @@ class Loader(AnnbatchLoader):
         return self
 
     def use_collection(self, collection: SpatialDatasetCollection, **kwargs: Any) -> Self:  # type: ignore[override]
-        """Load from a :class:`spatialbatch.SpatialDatasetCollection`. Can only be called once."""
+        """Load from a :class:`spatialbatch.SpatialDatasetCollection`. Can only be called once.
+
+        A dataset that declares an sddb contract (``uns["sddb_contract"]``) is validated with
+        ``sddb.contract.validate_dataset`` first, and refused if it does not conform. Without :mod:`sddb` installed,
+        only the contract version is checked.
+        """
+        from spatialbatch.io import check_contract
+
         if collection.is_empty:
             raise ValueError("SpatialDatasetCollection is empty")
         if self._collection_added:
             raise RuntimeError("You should not add multiple collections; add them to one collection instead.")
-        for group in collection:
+        groups = list(collection)
+        validated = [check_contract(group) for group in groups]  # every dataset, not only up to the first
+        if not all(validated):
+            warnings.warn(
+                "The collection declares an sddb contract but `sddb` is not installed, so only the contract version "
+                "was checked. Install `sddb` to validate it.",
+                UserWarning,
+                stacklevel=2,
+            )
+        for group in groups:
             self._add_group(group)
         self._collection_added = True
         return self
@@ -359,7 +383,9 @@ class Loader(AnnbatchLoader):
     def _add_group(self, group: zarr.Group) -> None:
         from spatialbatch.io import open_dataset_group
 
-        X, obs, var, item = open_dataset_group(group, self._image_names, self._label_names, self._annotations)
+        X, obs, var, item = open_dataset_group(
+            group, self._image_names, self._label_names, self._annotations, self._crop_px
+        )
         self._add_item(X, obs, var, item)
 
     def _unsupported(self, *args: Any, **kwargs: Any) -> Any:
