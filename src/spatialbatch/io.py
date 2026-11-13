@@ -125,8 +125,8 @@ def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
     ``AnnData.copy`` would copy X as well ("Full copy", ``anndata/_core/anndata.py:1447-1448``), so X is taken apart
     from the rest. A dask X is computed one row block at a time straight into its new rows (:func:`_compute_in_order`);
     a backed sparse X (anndata's ``sparse_dataset``) reads its rows in `order` from the store
-    (``anndata/_core/sparse_dataset.py:318-325, 403-406``). The other elements, such as layers, are copied in the new
-    order.
+    (``anndata/_core/sparse_dataset.py:318-325, 403-406``). The other elements, such as layers and
+    ``raw``, are copied in the new order.
     """
     import anndata as ad
 
@@ -148,6 +148,9 @@ def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
     elif X is not None and not (identity and (isinstance(X, np.ndarray) or sp.issparse(X))):
         X = X[order]
     rest.X = X
+    if table.raw is not None:  # anndata writes raw too (`iter_outer`, anndata/utils.py:442-457)
+        raw = table.raw.to_adata()
+        rest.raw = raw if identity else raw[order].copy()
     return rest
 
 

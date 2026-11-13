@@ -301,3 +301,14 @@ def test_sddb_contract_is_checked(tmp_path, monkeypatch):
         Loader(**kwargs).use_collection(collection)
     contract.validate_dataset = lambda group: []
     assert Loader(**kwargs).use_collection(collection).n_obs == 40
+
+
+def test_raw_is_written_in_order(tmp_path):
+    import anndata as ad
+
+    table, image, labels = _centred_table()
+    table.raw = table.copy()
+    expected = table.X.toarray()
+    group = next(iter(_write(tmp_path / "c.zarr", table, image, labels)))
+    cells = np.asarray(group["obs"]["cell"][...])
+    np.testing.assert_array_equal(ad.io.read_elem(group["raw"]["X"]).toarray(), expected[cells])
