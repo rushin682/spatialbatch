@@ -199,8 +199,8 @@ def write_collection_dataset(
 ) -> None:
     """Write a table and its pixel arrays as a dataset of a spatialbatch collection.
 
-    The cells are located by ``table.obsm["spatial"]``, their centres ``(x, y)`` in pixels of the arrays, which all
-    share one pixel grid. Tiles are not fixed here: :class:`spatialbatch.Loader` cuts a ``crop_px`` square around
+    The cells are located by ``table.obsm["spatial"]``, their centres ``(x, y)`` in pixel indices of the arrays (the
+    centre of pixel ``j`` is at ``j``), which all share one pixel grid. Tiles are not fixed here: :class:`spatialbatch.Loader` cuts a ``crop_px`` square around
     each centre at read time. What it writes at ``group[key]``:
 
     - the table, with its rows sorted along a Morton (Z-order) curve of the centres, written with
