@@ -123,9 +123,10 @@ def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
 
     `table` is left unchanged, and ``uns["spatialdata_attrs"]`` is left out, as it names the elements of the source.
     ``AnnData.copy`` would copy X as well ("Full copy", ``anndata/_core/anndata.py:1447-1448``), so X is taken apart
-    from the rest. A dask X is indexed lazily and computed once, after the reorder; a backed sparse X (anndata's
-    ``sparse_dataset``) reads its rows in `order` from the store (``anndata/_core/sparse_dataset.py:318-325, 403-406``).
-    The other elements, such as layers, are copied in the new order.
+    from the rest. A dask X is computed one row block at a time straight into its new rows (:func:`_compute_in_order`);
+    a backed sparse X (anndata's ``sparse_dataset``) reads its rows in `order` from the store
+    (``anndata/_core/sparse_dataset.py:318-325, 403-406``). The other elements, such as layers, are copied in the new
+    order.
     """
     import anndata as ad
 
@@ -142,12 +143,43 @@ def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
     )
     rest = rest.copy() if identity else rest[order].copy()
     X = table.X
-    if X is not None and not (identity and (isinstance(X, np.ndarray) or sp.issparse(X))):
-        X = X[order]
     if hasattr(X, "dask"):
-        X = X.compute()
+        X = _compute_in_order(X, order)
+    elif X is not None and not (identity and (isinstance(X, np.ndarray) or sp.issparse(X))):
+        X = X[order]
     rest.X = X
     return rest
+
+
+def _compute_in_order(X: Any, order: np.ndarray) -> Any:
+    """A 2-d dask array with its rows in `order`, computed one row block at a time into the result.
+
+    Only the result and one block are held, where ``X[order].compute()`` holds the blocks and their concatenation. A
+    sparse X is computed twice: once for the length of each row, which fixes where each row goes, then for the values.
+    """
+    blocks = X.rechunk({1: -1}).to_delayed().ravel()
+    starts = np.cumsum((0, *X.chunks[0][:-1]))
+    dest = np.empty(X.shape[0], np.int64)
+    dest[order] = np.arange(X.shape[0])  # source row -> row of the result
+    if not sp.issparse(X._meta):
+        out = np.empty(X.shape, X.dtype)
+        for start, block in zip(starts, blocks, strict=True):
+            b = np.asarray(block.compute())
+            out[dest[start : start + len(b)]] = b
+        return out
+    lengths = np.zeros(X.shape[0], np.int64)
+    for start, block in zip(starts, blocks, strict=True):
+        b = sp.csr_matrix(block.compute())
+        lengths[dest[start : start + b.shape[0]]] = np.diff(b.indptr)
+    indptr = np.concatenate([[0], np.cumsum(lengths)])
+    data = np.empty(indptr[-1], X.dtype)
+    indices = np.empty(indptr[-1], np.int32 if X.shape[1] < np.iinfo(np.int32).max else np.int64)
+    for start, block in zip(starts, blocks, strict=True):
+        b = sp.csr_matrix(block.compute())
+        row = np.repeat(np.arange(b.shape[0]), np.diff(b.indptr))
+        at = indptr[dest[start + row]] + np.arange(b.nnz) - b.indptr[row]
+        data[at], indices[at] = b.data, b.indices
+    return sp.csr_matrix((data, indices, indptr), shape=X.shape)
 
 
 def write_collection_dataset(

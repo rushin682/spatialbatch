@@ -217,7 +217,7 @@ def test_dask_input_not_computed_whole(tmp_path, monkeypatch):
     np.testing.assert_array_equal(group["labels"]["lab"][...], labels)
 
 
-@pytest.mark.parametrize("kind", ["scipy", "dask", "backed"])
+@pytest.mark.parametrize("kind", ["scipy", "dask", "dask-dense", "backed"])
 def test_written_x_is_the_input_x_in_order(tmp_path, kind):
     import anndata as ad
 
@@ -227,6 +227,9 @@ def test_written_x_is_the_input_x_in_order(tmp_path, kind):
     if kind == "dask":
         da = pytest.importorskip("dask.array")
         table.X = da.from_array(expected, chunks=(64, 20))
+    elif kind == "dask-dense":
+        da = pytest.importorskip("dask.array")
+        table.X = da.from_array(expected.toarray(), chunks=(64, 7))
     elif kind == "backed":
         ad.io.write_elem(zarr.open_group(tmp_path / "x.zarr", mode="w"), "X", expected)
         backed = ad.io.sparse_dataset(zarr.open_group(tmp_path / "x.zarr", mode="r")["X"])
@@ -235,7 +238,9 @@ def test_written_x_is_the_input_x_in_order(tmp_path, kind):
     cells = np.asarray(group["obs"]["cell"][...])
     assert not np.array_equal(cells, np.arange(table.n_obs))
     written = ad.io.read_elem(group["X"])
-    assert (written != expected[cells]).nnz == 0
+    np.testing.assert_array_equal(
+        np.asarray(written.todense() if hasattr(written, "todense") else written), expected[cells].toarray()
+    )
     assert "spatialdata_attrs" in table.uns and "spatialdata_attrs" not in group["uns"]
 
 
