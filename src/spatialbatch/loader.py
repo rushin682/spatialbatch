@@ -360,14 +360,14 @@ class Loader(AnnbatchLoader):
         ``sddb.contract.validate_dataset`` first, and refused if it does not conform. Without :mod:`sddb` installed,
         only the contract version is checked.
         """
-        from spatialbatch.io import check_contract
+        from spatialbatch.io import _check_contract
 
         if collection.is_empty:
             raise ValueError("SpatialDatasetCollection is empty")
         if self._collection_added:
             raise RuntimeError("You should not add multiple collections; add them to one collection instead.")
         groups = list(collection)
-        validated = [check_contract(group) for group in groups]  # every dataset, not only up to the first
+        validated = [_check_contract(group) for group in groups]  # every dataset, not only up to the first
         if not all(validated):
             warnings.warn(
                 "The collection declares an sddb contract but `sddb` is not installed, so only the contract version "

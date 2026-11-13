@@ -41,7 +41,8 @@ __all__ = ["SpatialDatasetCollection", "write_collection_dataset", "write_sharde
 
 #: Key of the group attribute that describes how a dataset of a collection was written.
 ENCODING_KEY = "spatialbatch"
-#: Datasets whose tiles are cut at read time, ``crop_px`` square around ``obsm["spatial"]``.
+#: Datasets whose tiles are cut at read time, ``crop_px`` square around ``obsm["spatial"]``. Their ``centres``
+#: attribute names that element; it is descriptive, the loader always reads ``obsm["spatial"]``.
 CENTRES_VERSION = "0.2.0"
 _SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$")
 
@@ -114,6 +115,7 @@ def _write_dataset(
                 array, out.require_group(kind), name, chunk=image_chunk, shard=image_shard, compressors=compressors
             )
     out.update_attributes({ENCODING_KEY: dict(encoding)})
+    group.update_attributes(V1_ENCODING)
 
 
 def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
@@ -176,7 +178,8 @@ def write_collection_dataset(
     Parameters
     ----------
     group
-        The collection group, must be zarr v3. It is marked as an annbatch collection.
+        The collection group, must be zarr v3, opened without consolidated metadata (zarr refuses to edit a store that
+        has it). It is marked as an annbatch collection.
     key
         The name of the dataset in `group`, ``dataset_<i>`` for it to be found by :class:`SpatialDatasetCollection`.
     table
@@ -237,7 +240,6 @@ def write_collection_dataset(
         image_shard=image_shard,
         compressors=compressors,
     )
-    group.update_attributes(V1_ENCODING)
 
 
 def write_sharded_sdata(
@@ -391,7 +393,7 @@ def open_dataset_group(
     return adata.X, None if len(obs.columns) == 0 else obs, adata.var, _Item(geometry, sources, coords)
 
 
-def contract_version(group: zarr.Group) -> str | None:
+def _contract_version(group: zarr.Group) -> str | None:
     """The version in ``uns["sddb_contract"]`` of a dataset, or ``None`` if it has no contract."""
     from anndata.io import read_elem
 
@@ -402,7 +404,7 @@ def contract_version(group: zarr.Group) -> str | None:
     return str(read_elem(element))
 
 
-def check_contract(group: zarr.Group) -> bool:
+def _check_contract(group: zarr.Group) -> bool:
     """Check a dataset that declares an sddb contract.
 
     With :mod:`sddb` installed, the dataset is validated by ``sddb.contract.validate_dataset``. Without it, only the
@@ -417,7 +419,7 @@ def check_contract(group: zarr.Group) -> bool:
     ValueError
         If the version does not parse or the validator reports issues.
     """
-    version = contract_version(group)
+    version = _contract_version(group)
     if version is None:
         return True
     try:
@@ -481,4 +483,3 @@ class SpatialDatasetCollection(DatasetCollection):
         first = len(self._dataset_keys)
         for i, path in enumerate(tqdm(paths, desc="Adding to collection")):
             write_sharded_sdata(self._group, sd.read_zarr(path), key=f"{DATASET_PREFIX}_{first + i}", **kwargs)
-            self._group.update_attributes(V1_ENCODING)
