@@ -65,12 +65,15 @@ def _copy_sharded(
     """
     lead = src.shape[:-2]
     height, width = src.shape[-2:]
+    chunks = (min(chunk, height), min(chunk, width))
+    # a shard must be a multiple of the chunk, also when the array is smaller than one shard
+    shards = tuple(min(shard, -(-side // c) * c) for side, c in zip((height, width), chunks, strict=True))
     dst = group.create_array(
         name,
         shape=src.shape,
         dtype=src.dtype,
-        chunks=(*lead, min(chunk, height), min(chunk, width)),
-        shards=(*lead, min(shard, height), min(shard, width)),
+        chunks=(*lead, *chunks),
+        shards=(*lead, *shards),
         compressors=tuple(compressors),
         fill_value=0,
         overwrite=True,

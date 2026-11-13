@@ -169,6 +169,17 @@ def test_write_collection_dataset_roundtrip(tmp_path):
     assert not np.array_equal(cells, np.arange(200))  # actually reordered
 
 
+def test_array_smaller_than_shard_with_default_chunks(tmp_path):
+    from spatialbatch import write_collection_dataset
+
+    table, image, labels = _centred_table()  # 300 x 340: not a multiple of the default 256-px chunk
+    group = zarr.open_group(tmp_path / "c.zarr", mode="a")
+    write_collection_dataset(group, key="dataset_0", table=table, images={"img": image}, labels={"lab": labels})
+    array = group["dataset_0"]["images"]["img"]
+    assert array.chunks == (2, 256, 256) and array.shards == (2, 512, 512)
+    np.testing.assert_array_equal(array[...], image)
+
+
 @pytest.mark.parametrize("crop_px", [16, 33])
 def test_crop_at_read_matches_reference(tmp_path, ref_tile, crop_px):
     table, image, labels = _centred_table()
