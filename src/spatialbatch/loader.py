@@ -248,8 +248,8 @@ class Loader(AnnbatchLoader):
         if not images and not labels:
             raise ValueError("At least one of `images` and `labels` must be given.")
         self._image_names, self._label_names = tuple(images), tuple(labels)
-        if crop_px is not None and crop_px < 1:
-            raise ValueError(f"`crop_px` must be a positive number of pixels, got {crop_px}.")
+        if crop_px is not None and (isinstance(crop_px, bool) or not isinstance(crop_px, int) or crop_px < 1):
+            raise ValueError(f"`crop_px` must be a positive integer number of pixels, got {crop_px}.")
         self._tile_scale, self._tile_dim_in_units, self._crop_px = tile_scale, tile_dim_in_units, crop_px
         self._rasterize, self._rasterize_kwargs = rasterize, dict(rasterize_kwargs)
         self._pad_value = pad_value

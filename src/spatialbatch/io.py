@@ -184,6 +184,8 @@ def write_collection_dataset(
     }
     if clash := encoding.keys() & attrs.keys():
         raise ValueError(f"`attrs` must not set {sorted(clash)}, which are written by spatialbatch.")
+    if not np.isfinite(centres).all():
+        raise ValueError("`table.obsm['spatial']` must hold finite centres.")
     order = morton_order(centres[:, 0], centres[:, 1], block_px)
     adata = table[order].copy()
     adata.uns.pop("spatialdata_attrs", None)
@@ -332,7 +334,8 @@ def open_dataset_group(
     if _version(meta["encoding-version"]) >= _version(CENTRES_VERSION):
         if crop_px is None:
             raise ValueError(f"{group.name} is tiled at read time: pass `crop_px` to the Loader.")
-        assert coords is not None
+        if coords is None:
+            raise ValueError(f"{group.name} is tiled at read time but its table has no `obsm['spatial']`.")
         start = round_half_up(coords - crop_px / 2)
         geometry = TileGeometry(start[:, 0], start[:, 1], crop_px, crop_px)
     else:
@@ -340,7 +343,7 @@ def open_dataset_group(
             warnings.warn(
                 f"{group.name} was written with fixed tiles of {meta['tile_hw']} pixels, so `crop_px` is ignored.",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=4,
             )
         origin = np.asarray(adata.obsm["tile_origin"][...]).astype(np.int64)
         height, width = meta["tile_hw"]
@@ -401,7 +404,7 @@ class SpatialDatasetCollection(DatasetCollection):
 
     This is :class:`annbatch.DatasetCollection` with a different writer. Iteration over the datasets,
     :attr:`is_empty` and :meth:`obs` are inherited. A dataset is one SpatialData, written by
-    :func:`write_sharded_sdata`: unlike annbatch there is no mixing of rows across files on disk, since pixels are not
+    :func:`write_sharded_sdata` or :func:`write_collection_dataset`: unlike annbatch there is no mixing of rows across files on disk, since pixels are not
     rows that can be moved around. Slides are mixed when sampling, as the chunks drawn by one request come from any
     dataset.
 
