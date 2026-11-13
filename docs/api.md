@@ -21,6 +21,7 @@
     :toctree: generated
 
     SpatialDatasetCollection
+    write_collection_dataset
     write_sharded_sdata
 ```
 

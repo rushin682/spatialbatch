@@ -139,9 +139,12 @@ lint.pydocstyle.convention = "numpy"
 [tool.pytest]
 addopts = [
   "--import-mode=importlib", # allow using test files with same name
+  "-m",
+  "not network",             # deselected by default and in CI; run with `pytest -m network`
 ]
 markers = [
   "slow: parity tests that read the real SpatialData stores in sddb-downloads/",
+  "network: tests that download data (deselected by default; run with -m network)",
 ]
 strict = true
 testpaths = [ "tests" ]

@@ -49,6 +49,18 @@ collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=
 loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(collection)
 ```
 
+### Try it
+
+A 400 µm crop of an Atera H&E slide (2,326 cells), written as a collection by spatialdata-db (about 15 MB):
+
+```bash
+pip install "spatialbatch @ git+https://github.com/timtreis/spatialbatch@feat/obsm-centres"
+curl -O https://exampledata.scverse.org/spatialdata-db/fixtures/sddb-contract/0.1.0/atera-breast-crop.zarr.zip && unzip -q atera-breast-crop.zarr.zip
+python -c 'from spatialbatch import Loader, SpatialDatasetCollection as C
+loader = Loader(images=["he"], labels=["cells"], crop_px=224, batch_size=32).use_collection(C("sddb-contract-0.1.0-atera-breast-crop.zarr"))
+b = next(iter(loader)); print(b["images"]["he"].shape, b["labels"]["cells"].shape, b["X"].shape)'
+```
+
 ## Getting started
 
 Please refer to the [documentation][],
