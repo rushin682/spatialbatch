@@ -27,7 +27,7 @@ def test_fixture_one_batch(tmp_path):
     archive = tmp_path / "fixture.zip"
     # the host refuses urllib's default User-Agent with a 403
     request = urllib.request.Request(URL, headers={"User-Agent": "spatialbatch-tests"})
-    with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as fh:  # noqa: S310
+    with urllib.request.urlopen(request, timeout=60) as response, archive.open("wb") as fh:
         shutil.copyfileobj(response, fh)
     assert hashlib.sha256(archive.read_bytes()).hexdigest() == SHA256
     with zipfile.ZipFile(archive) as z:
