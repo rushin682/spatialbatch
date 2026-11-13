@@ -217,6 +217,43 @@ def test_dask_input_not_computed_whole(tmp_path, monkeypatch):
     np.testing.assert_array_equal(group["labels"]["lab"][...], labels)
 
 
+@pytest.mark.parametrize("kind", ["scipy", "dask", "backed"])
+def test_written_x_is_the_input_x_in_order(tmp_path, kind):
+    import anndata as ad
+
+    table, image, labels = _centred_table()
+    expected = table.X.copy()
+    table.uns["spatialdata_attrs"] = {"region": "cells"}
+    if kind == "dask":
+        da = pytest.importorskip("dask.array")
+        table.X = da.from_array(expected, chunks=(64, 20))
+    elif kind == "backed":
+        ad.io.write_elem(zarr.open_group(tmp_path / "x.zarr", mode="w"), "X", expected)
+        backed = ad.io.sparse_dataset(zarr.open_group(tmp_path / "x.zarr", mode="r")["X"])
+        table.X = backed  # read in order from the store, not loaded first
+    group = next(iter(_write(tmp_path / "c.zarr", table, image, labels)))
+    cells = np.asarray(group["obs"]["cell"][...])
+    assert not np.array_equal(cells, np.arange(table.n_obs))
+    written = ad.io.read_elem(group["X"])
+    assert (written != expected[cells]).nnz == 0
+    assert "spatialdata_attrs" in table.uns and "spatialdata_attrs" not in group["uns"]
+
+
+def test_sorted_table_is_not_copied(monkeypatch, tmp_path):
+    import spatialbatch.io as sio
+
+    table, image, labels = _centred_table()
+    order = morton_order(table.obsm["spatial"][:, 0], table.obsm["spatial"][:, 1], 64)
+    table = table[order].copy()
+    seen = {}
+    real = sio._write_dataset
+    monkeypatch.setattr(
+        sio, "_write_dataset", lambda group, adata, **kw: seen.update(X=adata.X) or real(group, adata, **kw)
+    )
+    _write(tmp_path / "c.zarr", table, image, labels)
+    assert seen["X"] is table.X
+
+
 def test_old_encoding_still_loads(collection, ref_tile):
     collection, raws = collection
     assert all(g.attrs["spatialbatch"]["encoding-version"] == "0.1.0" for g in collection)

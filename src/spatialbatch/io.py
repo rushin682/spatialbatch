@@ -6,6 +6,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import scipy.sparse as sp
 import zarr
 from annbatch.io import DATASET_PREFIX, V1_ENCODING, DatasetCollection, write_sharded
 from annbatch.utils import load_all_aligned
@@ -115,6 +116,38 @@ def _write_dataset(
     out.update_attributes({ENCODING_KEY: dict(encoding)})
 
 
+def _in_order(table: AnnData, order: np.ndarray) -> AnnData:
+    """The rows of `table` in `order`, holding one X: the input's when `order` is the identity, else one reordered.
+
+    `table` is left unchanged, and ``uns["spatialdata_attrs"]`` is left out, as it names the elements of the source.
+    ``AnnData.copy`` would copy X as well ("Full copy", ``anndata/_core/anndata.py:1447-1448``), so X is taken apart
+    from the rest. A dask X is indexed lazily and computed once, after the reorder; a backed sparse X (anndata's
+    ``sparse_dataset``) reads its rows in `order` from the store (``anndata/_core/sparse_dataset.py:318-325, 403-406``).
+    The other elements, such as layers, are copied in the new order.
+    """
+    import anndata as ad
+
+    identity = np.array_equal(order, np.arange(table.n_obs))
+    rest = ad.AnnData(
+        obs=table.obs,
+        var=table.var,
+        uns={k: v for k, v in table.uns.items() if k != "spatialdata_attrs"},
+        obsm=dict(table.obsm),
+        varm=dict(table.varm),
+        obsp=dict(table.obsp),
+        varp=dict(table.varp),
+        layers={k: v for k, v in table.layers.items() if k is not None},  # X is `layers[None]` (anndata.py:659)
+    )
+    rest = rest.copy() if identity else rest[order].copy()
+    X = table.X
+    if X is not None and not (identity and (isinstance(X, np.ndarray) or sp.issparse(X))):
+        X = X[order]
+    if hasattr(X, "dask"):
+        X = X.compute()
+    rest.X = X
+    return rest
+
+
 def write_collection_dataset(
     group: zarr.Group,
     *,
@@ -190,8 +223,7 @@ def write_collection_dataset(
     if not np.isfinite(centres).all():
         raise ValueError("`table.obsm['spatial']` must hold finite centres.")
     order = morton_order(centres[:, 0], centres[:, 1], block_px)
-    adata = table[order].copy()
-    adata.uns.pop("spatialdata_attrs", None)
+    adata = _in_order(table, order)
     _write_dataset(
         group,
         adata,
@@ -281,8 +313,7 @@ def write_sharded_sdata(
     geometry = tile_starts(tiles)
     order = morton_order(tiles["x"].to_numpy(), tiles["y"].to_numpy(), block_px)
 
-    adata = table[order].copy()
-    adata.uns.pop("spatialdata_attrs", None)  # refers to the element names of the source, not to the collection
+    adata = _in_order(table, order)
     adata.obsm["tile_origin"] = np.stack([geometry.x0, geometry.y0], axis=1)[order].astype(np.int32)
     path = str(sdata.path)
     _write_dataset(
