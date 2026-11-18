@@ -33,8 +33,12 @@ __all__ = [
     "aligned_tiles",
     "element_to_cs_matrix",
     "get_tile_coords",
+    "integer_offset_xy",
     "is_identity_xy",
+    "level_array",
+    "level_to_cs_matrices",
     "morton_order",
+    "rasterize_level",
     "round_half_up",
     "scale0",
     "tile_starts",
@@ -168,9 +172,14 @@ def aligned_tiles(
 
 def scale0(sdata_path: str, kind: Literal["images", "labels"], name: str) -> zarr.Array:
     """The full-resolution array of a multiscale image / labels element of a zarr-backed SpatialData."""
+    return level_array(sdata_path, kind, name, 0)
+
+
+def level_array(sdata_path: str, kind: Literal["images", "labels"], name: str, level: int) -> zarr.Array:
+    """Pyramid level `level` (0 is the full resolution) of an image / labels element of a zarr-backed SpatialData."""
     group = zarr.open_group(sdata_path, mode="r")[f"{kind}/{name}"]
     attrs = dict(group.attrs)
-    return group[attrs.get("ome", attrs)["multiscales"][0]["datasets"][0]["path"]]
+    return group[attrs.get("ome", attrs)["multiscales"][0]["datasets"][level]["path"]]
 
 
 def element_to_cs_matrix(element: Any, cs: str) -> np.ndarray:
@@ -179,9 +188,42 @@ def element_to_cs_matrix(element: Any, cs: str) -> np.ndarray:
     return np.asarray(transformation.to_affine_matrix(input_axes=("x", "y"), output_axes=("x", "y")), dtype=np.float64)
 
 
+def level_to_cs_matrices(element: Any, cs: str) -> list[np.ndarray]:
+    """:func:`element_to_cs_matrix` of every pyramid level of `element`, finest first (one entry if not multiscale)."""
+    if not hasattr(element, "keys"):  # a single-scale DataArray
+        return [element_to_cs_matrix(element, cs)]
+    keys = sorted(element.keys(), key=lambda k: int(str(k).removeprefix("scale")))
+    return [element_to_cs_matrix(next(iter(element[k].ds.values())), cs) for k in keys]
+
+
+def rasterize_level(matrices: Sequence[np.ndarray], extent: float, unit_to_pixels: float) -> int:
+    """The pyramid level :func:`spatialdata.rasterize` reads a tile of side `extent` (units of `cs`) from.
+
+    That is the coarsest level that still has at least ``sqrt(2)`` level pixels per output pixel along both axes, or
+    the full resolution if none has. The criterion is linear in `extent`, so the level is the same for every tile.
+    """
+    target = extent * unit_to_pixels * np.sqrt(2)
+    corners = np.array([[0.0, extent, 0.0, extent], [0.0, 0.0, extent, extent], [1.0, 1.0, 1.0, 1.0]])
+    for level in reversed(range(len(matrices))):
+        in_level = np.linalg.inv(matrices[level]) @ corners
+        if (np.ptp(in_level[:2], axis=1) >= target).all():
+            return level
+    return 0
+
+
 def is_identity_xy(matrix: np.ndarray, atol: float = 1e-9) -> bool:
     """Whether a pixel grid coincides with `cs`, i.e. a tile is a plain slice of the stored array."""
     return bool(np.allclose(matrix, np.eye(3), atol=atol))
+
+
+def integer_offset_xy(matrix: np.ndarray, atol: float = 1e-9) -> tuple[int, int] | None:
+    """The ``(x, y)`` offset if a pixel grid is `cs` shifted by whole pixels (tiles are slices of it), else ``None``."""
+    offset = matrix[:2, 2]
+    shifted = np.eye(3)
+    shifted[:2, 2] = np.round(offset)
+    if not np.allclose(matrix, shifted, atol=atol):
+        return None
+    return int(shifted[0, 2]), int(shifted[1, 2])
 
 
 def round_half_up(a: np.ndarray) -> np.ndarray:
@@ -210,24 +252,27 @@ class TileGeometry:
         return len(self.x0)
 
 
-def tile_starts(tiles: pd.DataFrame) -> TileGeometry:
-    """Tile geometry from :func:`get_tile_coords` for a pixel grid identical to `cs`.
+def tile_starts(tiles: pd.DataFrame, unit_to_pixels: float = 1.0) -> TileGeometry:
+    """Tile geometry from :func:`get_tile_coords` in the pixel grid of `cs` with `unit_to_pixels` pixels per unit.
+
+    With the default of 1, pixel ``(x, y)`` of the grid is the unit square at ``(x, y)`` of `cs`.
 
     Raises
     ------
     ValueError
-        If the extent is not one integer for all tiles, so tiles could not be batched.
+        If the extent is not one integer number of pixels for all tiles, so tiles could not be batched.
     """
-    extent = tiles["extent"].to_numpy()
+    extent = tiles["extent"].to_numpy() * unit_to_pixels
     size = int(round(float(extent[0])))
     if not np.allclose(extent, size) or size < 1:
         raise ValueError(
             "Tiles must all have the same integer size in pixels to be batched, but the extents range over "
-            f"[{extent.min():.3f}, {extent.max():.3f}]. Pass `tile_dim_in_units` as an integer."
+            f"[{extent.min():.3f}, {extent.max():.3f}] pixels. Pass `tile_dim_in_units` such that it is an integer "
+            "number of pixels."
         )
     return TileGeometry(
-        x0=round_half_up(tiles["minx"].to_numpy()),
-        y0=round_half_up(tiles["miny"].to_numpy()),
+        x0=round_half_up(tiles["minx"].to_numpy() * unit_to_pixels),
+        y0=round_half_up(tiles["miny"].to_numpy() * unit_to_pixels),
         height=size,
         width=size,
     )
