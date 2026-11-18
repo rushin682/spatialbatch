@@ -114,7 +114,7 @@ class Loader(AnnbatchLoader):
 
     It follows annbatch's recipe. A :class:`~annbatch.abc.Sampler` emits :class:`~annbatch.types.LoadRequest` s, each a
     set of chunks of consecutive rows; one request is read from disk **at once**, concurrently for ``X`` and for every
-    modality, through async :mod:`zarr` (and `zarrs` if configured, see :doc:`zarr-configuration`); the in-memory
+    modality, through async :mod:`zarr` (and `zarrs` if configured, see :doc:`/zarr-configuration`); the in-memory
     result is shuffled and split into batches. No torch :class:`~torch.utils.data.DataLoader` is required, and when one
     is used it must be given ``batch_size=None``.
 
@@ -132,7 +132,7 @@ class Loader(AnnbatchLoader):
         Names of the labels elements to tile.
     tile_scale
         Tile size as a multiple of the region's diameter, ignored if `tile_dim_in_units` is set.
-        See :class:`spatialstream.dataloaders.XeniumDataset`.
+        See ``spatialstream.dataloaders.XeniumDataset``.
     tile_dim_in_units
         Side of the tile in units of the coordinate system. All tiles of a loader must have the same integer size.
     rasterize
