@@ -156,6 +156,8 @@ addopts = [
 markers = [
   "slow: parity tests that read the real SpatialData stores in sddb-downloads/",
 ]
+# lets spawned torch DataLoader workers import test modules (e.g. `tests.test_loader`)
+pythonpath = [ "." ]
 strict = true
 testpaths = [ "tests" ]
 
