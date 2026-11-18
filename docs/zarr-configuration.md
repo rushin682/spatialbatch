@@ -4,6 +4,7 @@ If you are using a local file system, use {doc}`zarrs-python <zarrs:index>`:
 
 ```python
 import zarr
+
 zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
 ```
 
@@ -14,12 +15,7 @@ Otherwise normal use {mod}`zarr` without {doc}`zarrs-python <zarrs:index>` (whic
 Please look at {doc}`zarrs-python <zarrs:index>`'s docs for more info but there are two important setting to consider:
 
 ```python
-zarr.config.set({
-    "threading.max_workers": None,
-    "codec_pipeline": {
-        "direct_io": False
-    }
-})
+zarr.config.set({"threading.max_workers": None, "codec_pipeline": {"direct_io": False}})
 ```
 
 The `threading.max_workers` will control how many threads are used by `zarrs`, and by extension, our data loader (reading pixels and expression).

@@ -20,10 +20,12 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Typing :: Typed",
 ]
 dependencies = [
   "annbatch[zarrs]",
-  "anndata>=0.12.9",
+  "anndata>=0.13",
   "dask>=2025.9",
   "geopandas",
   "numba",
@@ -47,7 +49,6 @@ urls.Source = "https://github.com/rushin682/spatialbatch"
 
 [dependency-groups]
 dev = [
-  "prek",
   "twine>=4.0.2",
 ]
 test = [
@@ -59,26 +60,35 @@ test = [
 doc = [
   "ipykernel",
   "ipython",
-  "myst-nb>=1.1",
   "pandas",
-  "scverse-misc[sphinx]>=0.1.2",
-  "sphinx>=8.1",
+  "scverse-doc[full]>=0.5",
+  "scverse-misc[sphinx]>=0.1.8",
   "sphinx-autodoc-typehints",
-  "sphinx-book-theme>=1",
-  "sphinx-copybutton",
-  "sphinx-design",
   "sphinxcontrib-bibtex>=1",
-  "sphinxcontrib-katex",
-  "sphinxext-opengraph",
+]
+typecheck = [
+  "mypy",
+  "pandas-stubs",
+  "scipy-stubs",
+  "types-tqdm",
 ]
 
 [tool.hatch]
+build.targets.sdist.exclude = [ "/docs", "/tests" ]
 envs.default.installer = "uv"
 envs.default.dependency-groups = [ "dev" ]
 envs.docs.scripts.build = "sphinx-build -M html docs docs/_build -W {args}"
 envs.docs.scripts.clean = "git clean -fdX -- {args:docs}"
 envs.docs.scripts.open = "python -m webbrowser -t docs/_build/html/index.html"
 envs.docs.dependency-groups = [ "doc" ]
+envs.hatch-check-code.dependencies = [ "prek" ]
+envs.hatch-check-code.scripts.lint-check = "echo 'try `hatch check code --fix`'; false"
+envs.hatch-check-code.scripts.lint-fix = "prek run -a --no-group=format --no-group=typecheck"
+envs.hatch-check-fmt.dependencies = [ "prek" ]
+envs.hatch-check-fmt.scripts.format-check = "echo 'try `hatch check fmt --fix`'; false"
+envs.hatch-check-fmt.scripts.format-fix = "prek run -a --group=format --no-group=typecheck"
+envs.hatch-check-types.scripts.check = [ "mypy" ]
+envs.hatch-check-types.dependency-groups = [ "typecheck", "test" ]
 envs.hatch-test.matrix = [
   # Test the lowest and highest supported Python versions with normal deps
   { deps = [ "stable" ], python = [ "3.12", "3.14" ] },
@@ -134,6 +144,11 @@ lint.per-file-ignores."docs/*" = [ "I" ]
 lint.per-file-ignores."tests/*" = [ "D" ]
 lint.pydocstyle.convention = "numpy"
 
+[tool.mypy]
+files = [ "src", "tests" ]
+# annbatch ships no py.typed marker and geopandas has no bundled types
+overrides = [ { module = [ "annbatch.*", "geopandas.*" ], ignore_missing_imports = true } ]
+
 [tool.pytest]
 addopts = [
   "--import-mode=importlib", # allow using test files with same name
@@ -145,11 +160,11 @@ strict = true
 testpaths = [ "tests" ]
 
 [tool.coverage]
+run.source = [ "spatialbatch" ]
 run.omit = [
   "**/test_*.py",
 ]
 run.patch = [ "subprocess" ]
-run.source = [ "spatialbatch" ]
 
 [tool.cruft]
 skip = [
@@ -158,6 +173,7 @@ skip = [
   "src/**/__init__.py",
   "src/**/basic.py",
   "docs/api.md",
+  "docs/api",
   "docs/changelog.md",
   "docs/references.bib",
   "docs/references.md",

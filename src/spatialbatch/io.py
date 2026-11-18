@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import zarr
@@ -140,8 +140,9 @@ def write_sharded_sdata(
     adata.obsm["tile_origin"] = np.stack([geometry.x0, geometry.y0], axis=1)[order].astype(np.int32)
     write_sharded(group, adata, n_obs_per_chunk=min(n_obs_per_chunk, adata.shape[0]), shard_size=shard_size, key=key)
 
-    out = group[key]
-    for kind, names in (("images", images), ("labels", labels)):
+    out = cast("zarr.Group", group[key])
+    kinds: tuple[tuple[Literal["images", "labels"], Sequence[str]], ...] = (("images", images), ("labels", labels))
+    for kind, names in kinds:
         for name in names:
             _copy_sharded(
                 scale0(str(sdata.path), kind, name),
@@ -176,7 +177,7 @@ def open_dataset_group(
     """Open a dataset written by :func:`write_sharded_sdata` for :class:`spatialbatch.Loader`."""
     from .loader import _Item, _Source
 
-    meta = group.attrs.get(ENCODING_KEY)
+    meta = cast("dict[str, Any] | None", group.attrs.get(ENCODING_KEY))
     if meta is None:
         raise ValueError(f"{group.name} was not written by `write_sharded_sdata`.")
     missing = [n for n in images if n not in meta["images"]] + [n for n in labels if n not in meta["labels"]]
@@ -188,9 +189,10 @@ def open_dataset_group(
     origin = np.asarray(adata.obsm["tile_origin"][...])
     height, width = meta["tile_hw"]
     sources: dict[str, _Source] = {}
-    for kind, names in (("images", images), ("labels", labels)):
+    kinds: tuple[tuple[Literal["images", "labels"], Sequence[str]], ...] = (("images", images), ("labels", labels))
+    for kind, names in kinds:
         for name in names:
-            array = group[kind][name]
+            array = cast("zarr.Array", cast("zarr.Group", group[kind])[name])
             sources[name] = _Source(kind, array, array.shape[0] if kind == "images" else None, array.dtype)
     obs = adata.obs if annotations is None else adata.obs[list(annotations)]
     coords = np.asarray(adata.obsm["spatial"][...]) if "spatial" in adata.obsm else None
@@ -247,5 +249,7 @@ class SpatialDatasetCollection(DatasetCollection):
         paths = list(sdata_paths)
         first = len(self._dataset_keys)
         for i, path in enumerate(tqdm(paths, desc="Adding to collection")):
-            write_sharded_sdata(self._group, sd.read_zarr(path), key=f"{DATASET_PREFIX}_{first + i}", **kwargs)
+            write_sharded_sdata(
+                self._group, sd.read_zarr(cast("str", path)), key=f"{DATASET_PREFIX}_{first + i}", **kwargs
+            )
             self._group.update_attributes(V1_ENCODING)

@@ -46,7 +46,9 @@ from spatialbatch import Loader, SpatialDatasetCollection
 
 collection = SpatialDatasetCollection("collection.zarr")
 collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=["cell_labels"], tile_dim_in_units=224)
-loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(collection)
+loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(
+    collection
+)
 ```
 
 ## Getting started
