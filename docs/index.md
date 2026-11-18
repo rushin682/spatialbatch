@@ -12,14 +12,6 @@ quickstart.md
 ```
 
 ```{toctree}
-:caption: Guides
-:hidden: true
-:maxdepth: 1
-
-notebooks/example
-```
-
-```{toctree}
 :caption: Reference
 :hidden: true
 :maxdepth: 1

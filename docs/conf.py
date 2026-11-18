@@ -5,6 +5,8 @@
 from datetime import datetime
 from importlib.metadata import metadata
 
+from scverse_doc.registry import intersphinx
+
 # NOTE: If you installed your project in editable mode, this might be stale.
 #       If this is the case, reinstall it to refresh the metadata
 info = metadata("spatialbatch")
@@ -53,3 +55,40 @@ xref_overrides = {
     # For a missing link that can’t be fixed this way, add it to `nitpick_ignore` instead.
     #     "igraph._igraph.GraphBase": "igraph.GraphBase",
 }
+
+# Packages outside the scverse registry that the docstrings link to.
+intersphinx_mapping = intersphinx() | {
+    "annbatch": ("https://annbatch.readthedocs.io/en/stable/", None),
+    "zarr": ("https://zarr.readthedocs.io/en/stable/", None),
+    "zarrs": ("https://zarrs-python.readthedocs.io/en/latest/", None),
+    "torch": ("https://docs.pytorch.org/docs/stable/", None),
+    "jax": ("https://docs.jax.dev/en/latest/", None),
+    "cupy": ("https://docs.cupy.dev/en/stable/", None),
+}
+
+# `BackingArray` is a private type variable in annbatch's signatures, with nothing to link to.
+nitpick_ignore = [("py:class", "BackingArray")]
+
+
+def _resolve_typeddict(app, env, node, contnode):
+    """Resolve a failed ``:class:`` reference against intersphinx ``py:typeddict`` entries.
+
+    annbatch's inventory lists its TypedDicts (e.g. `annbatch.types.LoadRequest`) as ``py:typeddict``,
+    an object type this build's Python domain doesn't know, so ``:class:`` references to them
+    (including those in docstrings inherited from annbatch) find nothing.
+    """
+    from docutils import nodes
+
+    if node.get("refdomain") != "py" or node.get("reftype") != "class":
+        return None
+    entry = env.intersphinx_inventory.get("py:typeddict", {}).get(node["reftarget"])
+    if entry is None:
+        return None
+    ref = nodes.reference("", "", internal=False, refuri=entry.uri, reftitle=entry.project_name)
+    ref.append(contnode)
+    return ref
+
+
+def setup(app):
+    """Register the typeddict reference fallback."""
+    app.connect("missing-reference", _resolve_typeddict)

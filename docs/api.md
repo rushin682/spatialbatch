@@ -41,6 +41,7 @@ The abstract {class}`annbatch.abc.Sampler` is shared with annbatch, as is {class
 ```{eval-rst}
 .. autosummary::
     :toctree: generated
+    :template: typeddict.rst
 
     types.SpatialLoaderOutput
 ```

@@ -1,18 +1,25 @@
 # Quickstart
 
-spatialbatch works on {class}`~anndata.AnnData` objects: {mod}`spatialbatch.pp` preprocesses them, {mod}`spatialbatch.tl` computes on them and {mod}`spatialbatch.pl` plots them.
+{class}`spatialbatch.Loader` streams minibatches out of on-disk {class}`~spatialdata.SpatialData` stores:
+for every cell, a tile of each requested image and labels element together with the cell's expression and annotations.
 
 ```python
-import numpy as np
-from anndata import AnnData
+import spatialdata as sd
+from spatialbatch import Loader
 
-import spatialbatch
+loader = Loader(
+    images=["morphology_focus"],
+    labels=["cell_labels"],
+    tile_dim_in_units=224,
+    batch_size=32,
+    shuffle=True,
+    to="torch",
+).add_sdata(sd.read_zarr("xenium.zarr"))
 
-adata = AnnData(np.random.normal(size=(20, 10)))
-
-spatialbatch.pp.basic_preproc(adata)
-spatialbatch.tl.basic_tool(adata)
-spatialbatch.pl.basic_plot(adata)
+for batch in loader:
+    batch["images"]["morphology_focus"]  # (32, 1, 224, 224)
+    batch["X"]  # (32, n_genes) sparse expression
 ```
 
-The {doc}`tutorials <notebooks/example>` go into more detail and the {doc}`API reference <api>` lists every function.
+For the best throughput, write the stores once into a {class}`~spatialbatch.SpatialDatasetCollection`
+and see {doc}`zarr-configuration`. The {doc}`API reference <api>` lists every class and function.
