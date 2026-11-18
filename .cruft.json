@@ -1,7 +1,7 @@
 {
   "template": "https://github.com/scverse/cookiecutter-scverse",
-  "commit": "6518dfa1abde7379ea7255daf0ce09c23f2b4c94",
-  "checkout": "v0.8.0",
+  "commit": "f302cd783f7eb50bf46b682d5b62078be6e825ea",
+  "checkout": "main",
   "context": {
     "cookiecutter": {
       "project_name": "spatialbatch",
@@ -24,8 +24,12 @@
         "LICENSE",
         "README.md",
         "docs/api.md",
+        "docs/api/**",
+        "docs/citation.md",
         "docs/index.md",
+        "docs/installation.md",
         "docs/notebooks/example.ipynb",
+        "docs/quickstart.md",
         "docs/references.bib",
         "docs/references.md",
         "src/**",
@@ -37,7 +41,7 @@
         "trim_blocks": true
       },
       "_template": "https://github.com/scverse/cookiecutter-scverse",
-      "_commit": "6518dfa1abde7379ea7255daf0ce09c23f2b4c94"
+      "_commit": "f302cd783f7eb50bf46b682d5b62078be6e825ea"
     }
   },
   "directory": null
