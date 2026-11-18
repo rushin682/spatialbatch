@@ -3,7 +3,7 @@
 [![Tests][badge-tests]][tests]
 [![Documentation][badge-docs]][documentation]
 
-[badge-tests]: https://img.shields.io/github/actions/workflow/status/rushin/spatialbatch/test.yaml?branch=main
+[badge-tests]: https://img.shields.io/github/actions/workflow/status/rushin682/spatialbatch/test.yaml?branch=main
 [badge-docs]: https://app.readthedocs.org/projects/spatialbatch/badge/
 
 A minibatch loader for on-disk [SpatialData][spatialdata] stores: tiles of every image and labels element, centered on each cell,
@@ -82,7 +82,7 @@ Choose from the options below to install spatialbatch:
 1. Install the latest development version:
 
    ```bash
-   pip install git+https://github.com/rushin/spatialbatch.git  # (or `uv add`)
+   pip install git+https://github.com/rushin682/spatialbatch.git  # (or `uv add`)
    ```
 
 ## Release notes
@@ -103,8 +103,8 @@ If you found a bug, please use the [issue tracker][].
 [zarrs-python]: https://zarrs-python.readthedocs.io
 [uv]: https://github.com/astral-sh/uv
 [scverse discourse]: https://discourse.scverse.org/
-[issue tracker]: https://github.com/rushin/spatialbatch/issues
-[tests]: https://github.com/rushin/spatialbatch/actions/workflows/test.yaml
+[issue tracker]: https://github.com/rushin682/spatialbatch/issues
+[tests]: https://github.com/rushin682/spatialbatch/actions/workflows/test.yaml
 [documentation]: https://spatialbatch.readthedocs.io
 [changelog]: https://spatialbatch.readthedocs.io/page/changelog.html
 [api documentation]: https://spatialbatch.readthedocs.io/page/api.html

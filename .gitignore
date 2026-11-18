@@ -2,11 +2,14 @@
 .DS_Store
 *~
 buck-out/
+graphify-out/
+.graphifyignore
 
 # Compiled files
 .venv/
 __pycache__/
 .*cache/
+uv.lock
 
 # Distribution / packaging
 /dist/
@@ -15,7 +18,13 @@ __pycache__/
 /data/
 /node_modules/
 /.coverage*
+benchmarks/
 
 # docs
 /docs/generated/
 /docs/_build/
+
+
+# worktrees & claude files
+.claude/
+CLAUDE.md

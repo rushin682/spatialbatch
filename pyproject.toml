@@ -42,8 +42,8 @@ optional-dependencies.torch = [
 ]
 # https://docs.pypi.org/project_metadata/#project-urls
 urls.Documentation = "https://spatialbatch.readthedocs.io/"
-urls.Homepage = "https://github.com/rushin/spatialbatch"
-urls.Source = "https://github.com/rushin/spatialbatch"
+urls.Homepage = "https://github.com/rushin682/spatialbatch"
+urls.Source = "https://github.com/rushin682/spatialbatch"
 
 [dependency-groups]
 dev = [
@@ -93,8 +93,6 @@ envs.hatch-test.overrides.matrix.deps.env-vars = [
 envs.hatch-test.dependency-groups = [ "dev", "test" ]
 
 [tool.uv]
-# annbatch is a hard dependency: develop against the sibling checkout.
-sources.annbatch = { path = "../annbatch", editable = true }
 
 [tool.ruff]
 line-length = 120
