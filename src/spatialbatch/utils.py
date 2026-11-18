@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
     from geopandas import GeoDataFrame
     from spatialdata import SpatialData
+    from spatialdata.transformations import BaseTransformation
 
     from spatialbatch.types import SpatialLoaderOutput
 
@@ -68,7 +69,7 @@ def validate_inputs(
     region_elem = sdata[region]
     if get_model(region_elem) == PointsModel:
         raise ValueError("`regions_element` must be a shapes or labels element, points are currently not supported.")
-    region_trans = get_transformation(region_elem, get_all=True)
+    region_trans = cast("dict[str, BaseTransformation]", get_transformation(region_elem, get_all=True))
     for name in images:
         if get_model(sdata[name]) not in (Image2DModel, Image3DModel):
             raise ValueError("`images_element` must be an image element.")
@@ -76,7 +77,7 @@ def validate_inputs(
         if get_model(sdata[name]) not in (Labels2DModel, Labels3DModel):
             raise ValueError("`labels_element` must be a labels element.")
     for name in (*images, *labels):
-        elem_trans = get_transformation(sdata[name], get_all=True)
+        elem_trans = cast("dict[str, BaseTransformation]", get_transformation(sdata[name], get_all=True))
         if not (cs in region_trans and cs in elem_trans):
             raise ValueError(f"The coordinate system `{cs}` is not valid for the region `{region}` and image `{name}`.")
 
@@ -89,8 +90,9 @@ def validate_inputs(
     if get_model(region_elem) in (Labels2DModel, Labels3DModel):
         indices = get_element_instances(region_elem).tolist()
     else:
-        indices = region_elem.index.tolist()
-    instance_column = table.obs.loc[table.obs[region_key] == region, instance_key]
+        indices = cast("GeoDataFrame", region_elem).index.tolist()
+    obs = cast("pd.DataFrame", table.obs)
+    instance_column = obs.loc[obs[region_key] == region, instance_key]
     if not set(indices).issubset(instance_column):
         raise RuntimeError(
             "Some of the instances in the region element are not annotated by the table. You can remove some "
@@ -168,14 +170,14 @@ def aligned_tiles(
 
 def scale0(sdata_path: str, kind: Literal["images", "labels"], name: str) -> zarr.Array:
     """The full-resolution array of a multiscale image / labels element of a zarr-backed SpatialData."""
-    group = zarr.open_group(sdata_path, mode="r")[f"{kind}/{name}"]
-    attrs = dict(group.attrs)
-    return group[attrs.get("ome", attrs)["multiscales"][0]["datasets"][0]["path"]]
+    group = cast("zarr.Group", zarr.open_group(sdata_path, mode="r")[f"{kind}/{name}"])
+    attrs: dict[str, Any] = dict(group.attrs)
+    return cast("zarr.Array", group[attrs.get("ome", attrs)["multiscales"][0]["datasets"][0]["path"]])
 
 
 def element_to_cs_matrix(element: Any, cs: str) -> np.ndarray:
     """The 3x3 affine matrix taking ``(x, y, 1)`` in the element's pixel grid to the coordinate system `cs`."""
-    transformation = get_transformation(element, to_coordinate_system=cs)
+    transformation = cast("BaseTransformation", get_transformation(element, to_coordinate_system=cs))
     return np.asarray(transformation.to_affine_matrix(input_axes=("x", "y"), output_axes=("x", "y")), dtype=np.float64)
 
 

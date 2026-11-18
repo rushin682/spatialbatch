@@ -69,6 +69,8 @@ doc = [
 typecheck = [
   "mypy",
   "pandas-stubs",
+  "scipy-stubs",
+  "types-tqdm",
 ]
 
 [tool.hatch]
@@ -144,6 +146,8 @@ lint.pydocstyle.convention = "numpy"
 
 [tool.mypy]
 files = [ "src", "tests" ]
+# annbatch ships no py.typed marker and geopandas has no bundled types
+overrides = [ { module = [ "annbatch.*", "geopandas.*" ], ignore_missing_imports = true } ]
 
 [tool.pytest]
 addopts = [

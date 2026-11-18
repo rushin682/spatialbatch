@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -20,7 +21,7 @@ RASTERIZE_KWARGS = {"target_unit_to_pixels": 1.0}
 BORDER_CELLS = slice(5200, 5260)  # cells 5222-5224 of the first store cross the left border of the image
 
 
-def _original(sdata, rasterize: bool) -> XeniumDataset:
+def _original(sdata, rasterize: bool) -> Any:
     return XeniumDataset(
         sdata=sdata,
         regions_to_images={"cell_circles": "morphology_focus"},

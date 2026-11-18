@@ -54,7 +54,7 @@ def make_sdata(
     import spatialdata as sd
     from scipy import sparse as sp
     from spatialdata.models import Image2DModel, Labels2DModel, ShapesModel, TableModel
-    from spatialdata.transformations import Identity, Scale
+    from spatialdata.transformations import Scale
 
     rng = np.random.default_rng(seed)
     height, width = shape
@@ -77,17 +77,17 @@ def make_sdata(
             index=ids,
         ),
     )
-    adata.obs_names = ids
+    adata.obs_names = ids.tolist()
     adata.obsm["spatial"] = (centers / SCALE).astype(np.float32)
     sdata = sd.SpatialData(
         images={
             "img": Image2DModel.parse(
-                image, dims=("c", "y", "x"), scale_factors=[2], transformations={"global": Identity()}
+                image,  # type: ignore[arg-type]  # spatialdata annotates float-only, but integer images are valid dims=("c", "y", "x"), scale_factors=[2], transformations={"global": Identity()}
             )
         },
         labels={
             "lab": Labels2DModel.parse(
-                labels, dims=("y", "x"), scale_factors=[2], transformations={"global": Identity()}
+                labels,  # type: ignore[arg-type]  # spatialdata annotates float-only, but integer labels are valid dims=("y", "x"), scale_factors=[2], transformations={"global": Identity()}
             )
         },
         shapes={"cells": circles},

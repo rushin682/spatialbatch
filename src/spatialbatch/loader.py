@@ -5,7 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, Self
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 import numpy as np
 import zarr
@@ -89,13 +89,13 @@ class _SpatialdataTile:
 
     def __call__(self, row: int) -> np.ndarray:
         minx, miny, maxx, maxy = self.bounds[row]
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "axes": ("x", "y"),
             "min_coordinate": np.array([minx, miny]),
             "max_coordinate": np.array([maxx, maxy]),
             "target_coordinate_system": self.cs,
         }
-        tile = (
+        tile: Any = (
             spatialdata_rasterize(self.element, **kwargs, **self.rasterize_kwargs)
             if self.rasterize
             else bounding_box_query(self.element, **kwargs)
@@ -183,6 +183,8 @@ class Loader(AnnbatchLoader):
     ...     batch["images"]["morphology_focus"]  # (32, 1, 224, 224)
     """
 
+    _collection_added: bool  # set by annbatch's Loader, which ships no type information
+
     _COMMON_SAMPLER_ARGS = {
         "chunk_size": 64,
         "preload_nchunks": 8,
@@ -223,7 +225,7 @@ class Loader(AnnbatchLoader):
                 "batch_size": batch_size,
                 "drop_last": drop_last,
             }
-            resolved = {k: Loader._COMMON_SAMPLER_ARGS[k] if v is None else v for k, v in core.items()}
+            resolved: dict[str, Any] = {k: Loader._COMMON_SAMPLER_ARGS[k] if v is None else v for k, v in core.items()}
             batch_sampler = RandomSampler(**resolved, rng=rng) if shuffle else SequentialSampler(**resolved)
             super().__init__(batch_sampler=batch_sampler, return_index=return_index, preload_to_gpu=False, to=to)
         else:  # let annbatch reject sampler arguments that conflict with a custom sampler
@@ -288,7 +290,7 @@ class Loader(AnnbatchLoader):
         bounds = tiles[["minx", "miny", "maxx", "maxy"]].to_numpy()
 
         sources = self._open_sources(sdata, bounds, geometry, cs)
-        group = zarr.open_group(sdata.path, mode="r")["tables"][table_name]
+        group = cast("zarr.Group", zarr.open_group(sdata.path, mode="r")["tables"])[table_name]
         adata = load_all_aligned(group)
         obs = adata.obs if self._annotations is None else adata.obs[self._annotations]
         coords = np.asarray(adata.obsm["spatial"][...]) if "spatial" in adata.obsm else None
@@ -300,9 +302,13 @@ class Loader(AnnbatchLoader):
     ) -> dict[str, _Source]:
         sources: dict[str, _Source] = {}
         native = (not self._rasterize) or self._rasterize_kwargs == {"target_unit_to_pixels": 1.0}
-        for kind, names in (("images", self._image_names), ("labels", self._label_names)):
+        kinds: tuple[tuple[Literal["images", "labels"], Sequence[str]], ...] = (
+            ("images", self._image_names),
+            ("labels", self._label_names),
+        )
+        for kind, names in kinds:
             for name in names:
-                element = sdata[name]
+                element = cast("DataArray | DataTree", sdata[name])
                 array = scale0(str(sdata.path), kind, name)
                 if array.ndim != (3 if kind == "images" else 2):
                     raise NotImplementedError(f"Only 2D {kind} are supported, but `{name}` has shape {array.shape}.")
@@ -426,7 +432,9 @@ class Loader(AnnbatchLoader):
             wy0, wy1 = int(cy0[group].min()), int(cy1[group].max())
             wx0, wx1 = int(cx0[group].min()), int(cx1[group].max())
             selection = (slice(wy0, wy1), slice(wx0, wx1))
-            window = await arr.getitem(selection if source.channels is None else (slice(None), *selection))
+            window = cast(
+                "np.ndarray", await arr.getitem(selection if source.channels is None else (slice(None), *selection))
+            )
             for j, sy0, sy1, sx0, sx1, dy0, dx0 in zip(
                 group.tolist(),
                 (cy0[group] - wy0).tolist(),
@@ -443,12 +451,13 @@ class Loader(AnnbatchLoader):
 
     async def _fetch_tiles_fallback(self, source: _Source, rows: np.ndarray, out: np.ndarray) -> None:
         """Fill `out` with one spatialdata call per tile, spread over threads."""
-        assert source.fallback is not None
+        fallback = source.fallback
+        assert fallback is not None
         n_threads = zarr.config.get("threading.max_workers") or os.cpu_count() or 1
 
         def work() -> None:
             with ThreadPoolExecutor(max_workers=n_threads) as pool:
-                for j, tile in enumerate(pool.map(source.fallback, rows.tolist())):
+                for j, tile in enumerate(pool.map(fallback, rows.tolist())):
                     out[j] = tile
 
         await asyncio.get_running_loop().run_in_executor(None, work)
@@ -463,10 +472,13 @@ class Loader(AnnbatchLoader):
         return x, pixels
 
     def _maybe_accumulate_coords(self, dataset_index_to_rows: OrderedDict[int, np.ndarray]) -> np.ndarray | None:
-        coords = [self._items[idx].coords for idx in dataset_index_to_rows]
-        if any(c is None for c in coords):
-            return None
-        return np.concatenate([c[rows] for c, rows in zip(coords, dataset_index_to_rows.values(), strict=True)])
+        parts = []
+        for idx, rows in dataset_index_to_rows.items():
+            coords = self._items[idx].coords
+            if coords is None:
+                return None
+            parts.append(coords[rows])
+        return np.concatenate(parts)
 
     def _iter(self) -> Iterator[SpatialLoaderOutput]:  # type: ignore[override]
         check_lt_1([len(self._train_datasets), self.n_obs], ["Number of datasets", "Number of observations"])
