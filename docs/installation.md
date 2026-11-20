@@ -3,7 +3,6 @@
 spatialbatch needs Python 3.12 or newer.
 We recommend [uv][], which installs Python for you and keeps each project's dependencies in their own virtual environment.
 
-<!--
 ## PyPI
 
 Install the latest release from [PyPI][]:
@@ -28,7 +27,27 @@ pip install spatialbatch
 ::::
 :::::
 
--->
+To get a pre-release (e.g. a release candidate) once a final release exists, opt in explicitly:
+
+:::::{tab-set}
+::::{tab-item} uv
+:sync: uv
+
+```bash
+uv add --prerelease allow spatialbatch
+```
+
+::::
+
+::::{tab-item} Pip
+:sync: pip
+
+```bash
+pip install --pre spatialbatch
+```
+
+::::
+:::::
 
 ## Development version
 

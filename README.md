@@ -65,7 +65,6 @@ We recommend managing dependencies in project-specific virtual environments to a
 This is most convenient using package managers such as [uv][].
 Choose from the options below to install spatialbatch:
 
-<!--
 1. Add the latest release of `spatialbatch` from [PyPI][] to your `uv` project:
 
    ```bash
@@ -79,7 +78,8 @@ Choose from the options below to install spatialbatch:
    pip install spatialbatch
    ```
 
--->
+   To get a pre-release (e.g. a release candidate) once a final release exists,
+   use `pip install --pre spatialbatch` (or `uv add --prerelease allow spatialbatch`).
 
 1. Install the latest development version:
 
