@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning][].
 
 ## [Unreleased]
 
+## [0.0.1rc1] - 2026-11-20
+
 ### Added
 
 - `Loader`, an `annbatch.Loader` that streams cell tiles of images and labels with the expression and annotations of

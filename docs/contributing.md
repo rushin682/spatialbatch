@@ -238,24 +238,21 @@ This means that local testing via hatch and remote testing on CI tests against t
 
 ## Publishing a release
 
-### Updating the version number
+The version number is derived from the git tag by [hatch-vcs][], so you never edit it by hand.
+Choose the next version according to [Semantic Versioning][semver].
 
-Before making a release, you need to update the version number in the `pyproject.toml` file.
-Please adhere to [Semantic Versioning][semver], in brief
-
-> Given a version number MAJOR.MINOR.PATCH, increment the:
->
-> 1. MAJOR version when you make incompatible API changes,
-> 2. MINOR version when you add functionality in a backwards compatible manner, and
-> 3. PATCH version when you make backwards compatible bug fixes.
->
-> Additional labels for pre-release and build metadata are available as extensions to the MAJOR.MINOR.PATCH format.
-
-Once you are done, commit and push your changes and navigate to the "Releases" page of this project on GitHub.
-Specify `vX.X.X` as a tag name and create a release.
+To make a release, navigate to the "Releases" page of this project on GitHub.
+Specify `vX.Y.Z` as a tag name (or `vX.Y.ZrcN` for a pre-release, and tick "Set as a pre-release") and create a release.
 For more information, see [managing GitHub releases][].
 This will automatically create a git tag and trigger a Github workflow that creates a release on [PyPI][].
 
+:::{warning}
+Double-check the tag before publishing: it becomes the version on PyPI as-is.
+PyPI never allows a version to be re-uploaded, even after deletion,
+so a mistyped tag (e.g. `v0.0.1` instead of `v0.0.1rc1`) permanently uses up that version number.
+:::
+
+[hatch-vcs]: https://github.com/ofek/hatch-vcs
 [semver]: https://semver.org/
 [managing GitHub releases]: https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository
 [pypi]: https://pypi.org/
