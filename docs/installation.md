@@ -39,7 +39,7 @@ Install the latest development version from GitHub:
 :sync: uv
 
 ```bash
-uv add git+https://github.com/rushin/spatialbatch.git
+uv add git+https://github.com/rushin682/spatialbatch.git
 ```
 
 ::::
@@ -48,7 +48,7 @@ uv add git+https://github.com/rushin/spatialbatch.git
 :sync: pip
 
 ```bash
-pip install git+https://github.com/rushin/spatialbatch.git
+pip install git+https://github.com/rushin682/spatialbatch.git
 ```
 
 ::::
