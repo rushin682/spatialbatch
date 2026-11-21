@@ -127,7 +127,8 @@ def write_sharded_sdata(
         if not is_identity_xy(element_to_cs_matrix(sdata[name], cs)):
             raise NotImplementedError(
                 f"`{name}` is not in the pixel grid of `{cs}`, so its tiles are not slices and it cannot be written to a "
-                "collection. Tile it in place with `Loader.add_sdata` instead."
+                "collection. Resample it onto that grid with `spatialbatch.align_to_cs`, or tile it in place with "
+                "`Loader.add_sdata` instead."
             )
     table, tiles = aligned_tiles(
         sdata, region, table_name, cs, tile_scale=tile_scale, tile_dim_in_units=tile_dim_in_units

@@ -24,6 +24,15 @@
     write_sharded_sdata
 ```
 
+## Alignment
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated
+
+    align_to_cs
+```
+
 ## Samplers
 
 The abstract {class}`annbatch.abc.Sampler` is shared with annbatch, as is {class}`annbatch.samplers.SequentialSampler`.

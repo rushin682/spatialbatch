@@ -121,7 +121,8 @@ class Loader(AnnbatchLoader):
     Tiles that are a plain slice of the stored array (images in the pixel grid of the coordinate system, which is the
     case for Xenium ``morphology_focus``, ``morphology_mip`` and the labels) are read as a few large windows and
     cropped in memory. This yields exactly the pixels :func:`spatialdata.rasterize` returns (verified against
-    ``XeniumDataset``), without resampling. Other elements, such as a rotated H&E image, are tiled with spatialdata.
+    ``XeniumDataset``), without resampling. Other elements, such as a rotated H&E image, are tiled with spatialdata, one call
+    per tile, which is much slower: resample them once with :func:`spatialbatch.align_to_cs` to read them by slicing.
     Where a tile crosses the border of the array the missing pixels are `pad_value`.
 
     Parameters
