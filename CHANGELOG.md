@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning][].
 
 ## [Unreleased]
 
+### Added
+
+- `align_to_cs`: resample images and labels whose transformation to a coordinate system is not the identity (e.g. a
+  registered H&E image) onto its pixel grid with `spatialdata.rasterize`, once, so that they are tiled by slicing and
+  can be written to a `SpatialDatasetCollection`.
+
 ## [0.0.1rc1] - 2026-11-20
 
 ### Added
