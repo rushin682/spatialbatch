@@ -11,7 +11,8 @@ together with the cell's expression and annotations, streamed in large preloaded
 
 `spatialbatch` is built on, and has [annbatch][] as a dependency. It follows the same design: a `Sampler` emits requests for chunks of
 consecutive cells, one request is read from disk at once (concurrently for every modality, through async `zarr` and
-optionally [zarrs-python][]), shuffled in memory and split into batches. No torch `DataLoader` is needed.
+optionally [zarrs-python][]), shuffled in memory and split into batches. The `Loader` does its own batching and
+shuffling, so iterate it directly rather than wrapping it in a torch `DataLoader`.
 It reimplements `spatialstream.dataloaders.XeniumDataset`, which it reproduces exactly (see `tests/test_parity.py`).
 
 ```python
@@ -39,6 +40,13 @@ for batch in loader:
     batch["X"]  # (32, n_genes) sparse CSR expression
 ```
 
+> [!NOTE]
+> Use `spatialbatch.Loader` itself as the training loop's data source; we discourage wrapping it in a
+> `torch.utils.data.DataLoader`. The `Loader` already reads, shuffles and batches cells in large chunks, and a
+> `DataLoader` on top would re-batch them (unless `batch_size=None`) and adds worker processes on top of the loader's own
+> concurrent reads.
+> Pass `to="torch"` to get torch tensors, and `transform=...` for per-batch augmentation such as cropping or resizing.
+
 For the best throughput, write the stores once into a spatially sorted, sharded `SpatialDatasetCollection`:
 
 ```python
@@ -49,6 +57,18 @@ collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=
 loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(
     collection
 )
+```
+
+Images that are not in the pixel grid of the coordinate system, such as an H&E image registered to the slide with a
+rotation or a scaling, are tiled with one spatialdata call per tile, which is much slower, and cannot be written to a
+collection. Resample them once with `align_to_cs` to read them by slicing (about 50x faster on Xenium H&E):
+
+```python
+from spatialbatch import align_to_cs
+
+sdata = align_to_cs("xenium.zarr", "he_image", like="morphology_focus")  # adds `he_image_aligned` to the store
+# or: align_to_cs("xenium.zarr", "he_image", out_path="xenium_aligned.zarr")  # a copy, `he_image` replaced
+loader = Loader(images=["morphology_focus", "he_image_aligned"], tile_dim_in_units=224).add_sdata(sdata)
 ```
 
 ## Getting started
