@@ -27,6 +27,8 @@ pip install spatialbatch
 ::::
 :::::
 
+The default install includes spatialdata's `extra` ([spatialdata-plot][], [spatialdata-io][] and [napari-spatialdata][]), so plotting and the technology readers work out of the box.
+
 To get a pre-release (e.g. a release candidate) once a final release exists, opt in explicitly:
 
 :::::{tab-set}
@@ -77,3 +79,6 @@ To work on spatialbatch itself, see {doc}`contributing`.
 
 [uv]: https://docs.astral.sh/uv/
 [pypi]: https://pypi.org/project/spatialbatch
+[spatialdata-plot]: https://spatialdata.scverse.org/projects/plot/en/latest/
+[spatialdata-io]: https://spatialdata.scverse.org/projects/io/en/latest/
+[napari-spatialdata]: https://spatialdata.scverse.org/projects/napari/en/latest/

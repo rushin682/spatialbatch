@@ -52,13 +52,20 @@ every element you may need. Each loader then streams any subset of them (the tab
 the others. Tiles are 1024 x 1024 pixels by default: crop them to your model's input in `transform`.
 
 ```python
-from spatialbatch import Loader, SpatialDatasetCollection, center_crop
+from torchvision.transforms import v2
+
+from spatialbatch import Loader, SpatialDatasetCollection
 
 collection = SpatialDatasetCollection("collection.zarr")
 collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=["cell_labels"])
 
+crop = v2.CenterCrop(224)  # tiles are centered on their cell, so the cell stays at the center
 tiles = Loader(
-    table=False, images=["morphology_focus"], transform=lambda b: center_crop(b, 224), shuffle=True
+    table=False,
+    images=["morphology_focus"],
+    to="torch",
+    transform=lambda b: {**b, "images": {k: crop(v) for k, v in b["images"].items()}},
+    shuffle=True,
 ).use_collection(collection)  # image tiles only, (32, 1, 224, 224)
 expression = Loader(images=(), batch_size=4096, chunk_size=512, preload_nchunks=32, shuffle=True).use_collection(
     collection

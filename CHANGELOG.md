@@ -18,7 +18,6 @@ and this project adheres to [Semantic Versioning][].
 - `write_sharded_sdata` / `SpatialDatasetCollection.add_sdatas`: `load_table`, a callback that chooses what of the table
   is written (like `load_adata` in annbatch), and `write_X=False` to write no expression. `images` and `labels` may be
   empty, for a table-only collection.
-- `center_crop`, to crop the tiles of a batch around their cell in a `transform`.
 
 ### Changed
 

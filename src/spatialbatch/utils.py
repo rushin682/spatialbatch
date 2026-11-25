@@ -34,7 +34,6 @@ __all__ = [
     "DEFAULT_TILE_PX",
     "TileGeometry",
     "aligned_tiles",
-    "center_crop",
     "element_to_cs_matrix",
     "get_tile_coords",
     "is_identity_xy",
@@ -287,41 +286,4 @@ def to_spatialstream_batch(
         if batch["obs"] is None:
             raise ValueError("The batch has no obs, so there are no annotations to return.")
         out["annotations"] = batch["obs"][cols].to_numpy()[:, None, :]
-    return out
-
-
-def center_crop(batch: SpatialLoaderOutput, size: int | tuple[int, int]) -> SpatialLoaderOutput:
-    """Crop every image and labels tile of a batch to its central `size` pixels.
-
-    Tiles are centered on their cell, so the cell stays at the center of the crop. Use it in a
-    :class:`spatialbatch.Loader` ``transform`` to load a large context (1024 pixels by default) and train on a
-    smaller tile. Works on numpy, torch and jax arrays alike, since it only slices the last two axes.
-
-    Parameters
-    ----------
-    batch
-        A batch yielded by :class:`spatialbatch.Loader`.
-    size
-        Side of the crop, or its ``(height, width)``. Must not exceed the tile.
-
-    Returns
-    -------
-    A shallow copy of `batch` with cropped ``images`` and ``labels``; the other keys are shared.
-
-    Examples
-    --------
-    >>> loader = Loader(images=["morphology_focus"], transform=lambda b: center_crop(b, 224))
-    """
-    height, width = (size, size) if isinstance(size, int) else size
-
-    def crop(tiles: Any) -> Any:
-        th, tw = tiles.shape[-2:]
-        if height > th or width > tw:
-            raise ValueError(f"Cannot crop tiles of {(th, tw)} pixels to {(height, width)}.")
-        y0, x0 = (th - height) // 2, (tw - width) // 2
-        return tiles[..., y0 : y0 + height, x0 : x0 + width]
-
-    out = cast("SpatialLoaderOutput", dict(batch))
-    out["images"] = {name: crop(tiles) for name, tiles in batch["images"].items()}
-    out["labels"] = {name: crop(tiles) for name, tiles in batch["labels"].items()}
     return out

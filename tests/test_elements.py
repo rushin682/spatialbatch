@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 import zarr
 
-from spatialbatch import Loader, SpatialDatasetCollection, center_crop, write_sharded_sdata
+from spatialbatch import Loader, SpatialDatasetCollection, write_sharded_sdata
 from spatialbatch.utils import DEFAULT_PIXEL_CHUNK, DEFAULT_TILE_PX
 
 TILE = 32
@@ -141,14 +141,17 @@ def test_defaults_are_1024_pixel_tiles_in_128_pixel_chunks(synthetic, tmp_path):
         )
 
 
-@pytest.mark.parametrize("size", [8, (8, 16)])
-def test_center_crop_keeps_the_cell_centered(collection, size):
-    loader = Loader(images=["img"], labels=["lab"], batch_size=8, transform=lambda b: center_crop(b, size))
-    batch = next(iter(loader.use_collection(collection)))
-    full = next(iter(Loader(images=["img"], labels=["lab"], batch_size=8).use_collection(collection)))
-    h, w = (size, size) if isinstance(size, int) else size
-    y0, x0 = (TILE - h) // 2, (TILE - w) // 2
-    assert batch["images"]["img"].shape == (8, 1, h, w) and batch["labels"]["lab"].shape == (8, h, w)
-    np.testing.assert_array_equal(batch["images"]["img"], full["images"]["img"][..., y0 : y0 + h, x0 : x0 + w])
-    with pytest.raises(ValueError, match="Cannot crop"):
-        center_crop(full, TILE + 1)
+def test_transform_is_applied_to_each_batch(collection):
+    def crop(size):
+        def transform(batch):
+            y0 = (batch["images"]["img"].shape[-1] - size) // 2
+            batch["images"] = {k: v[..., y0 : y0 + size, y0 : y0 + size] for k, v in batch["images"].items()}
+            return batch
+
+        return transform
+
+    batch = next(iter(Loader(images=["img"], batch_size=8, transform=crop(8)).use_collection(collection)))
+    full = next(iter(Loader(images=["img"], batch_size=8).use_collection(collection)))
+    y0 = (TILE - 8) // 2
+    assert batch["images"]["img"].shape == (8, 1, 8, 8)
+    np.testing.assert_array_equal(batch["images"]["img"], full["images"]["img"][..., y0 : y0 + 8, y0 : y0 + 8])

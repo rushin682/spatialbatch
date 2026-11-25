@@ -108,7 +108,8 @@ def write_sharded_sdata(
 
     By default a tile is ``1024 x 1024`` units of `cs` (pixels for Xenium's ``global``), stored in chunks of
     ``128 x 128`` pixels, so that a tile side spans 8 chunks. Crop it to the size a model needs in the loader's
-    ``transform``, see :func:`spatialbatch.center_crop`.
+    ``transform``, e.g. with ``torchvision.transforms.v2.CenterCrop``: tiles are centered on their cell, so a center
+    crop keeps the cell centered.
 
     Only elements whose pixel grid is the coordinate system `cs` (no rotation or scaling) can be written, because a
     tile is then a plain slice. Elements such as a rotated H&E image are tiled in place instead, see

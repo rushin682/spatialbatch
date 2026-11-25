@@ -145,7 +145,8 @@ class Loader(AnnbatchLoader):
     tile_dim_in_units
         Side of the tile in units of the coordinate system, 1024 by default (pixels for Xenium's ``global``). All tiles
         of a loader must have the same integer size. Load a large context and crop it to the size a model needs with
-        `transform`, see :func:`spatialbatch.center_crop`. A collection's tiles have the size it was written with.
+        `transform`, e.g. with ``torchvision.transforms.v2.CenterCrop``: tiles are centered on their cell, so a
+        center crop keeps the cell centered. A collection's tiles have the size it was written with.
     rasterize
         Mirror of ``XeniumDataset``: whether tiles are produced with :func:`spatialdata.rasterize` (``True``) or
         :func:`spatialdata.bounding_box_query` (``False``). It only matters on the spatialdata path.
