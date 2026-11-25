@@ -117,7 +117,9 @@ def test_load_table_and_write_x(synthetic, tmp_path):
     with pytest.raises(ValueError, match="keep the rows"):
         write_sharded_sdata(group, sdata, key="dataset_1", images=["img"], load_table=lambda a: a[:10], **KW)
 
-    write_sharded_sdata(group, sdata, key="dataset_2", images=["img"], write_X=False, tile_dim_in_units=TILE, **KW)
+    write_sharded_sdata(
+        group, sdata, key="dataset_2", images=["img"], load_table=lambda t: t[:, []], tile_dim_in_units=TILE, **KW
+    )
     assert group["dataset_2"]["X"].attrs["shape"] == [200, 0]
 
 

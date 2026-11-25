@@ -297,15 +297,15 @@ class Loader(AnnbatchLoader):
             raise ValueError("`sdata` must be backed by a zarr store (use `spatialdata.read_zarr`) to be streamed.")
         validate_inputs(sdata, region, self._image_names, self._label_names, cs, table_name)
 
+        geometry: TileGeometry | None = None
+        sources: dict[str, _Source] = {}
         if self._image_names or self._label_names:
             _, tiles = aligned_tiles(
                 sdata, region, table_name, cs, tile_scale=self._tile_scale, tile_dim_in_units=self._tile_dim_in_units
             )
-            geometry: TileGeometry | None = tile_starts(tiles)
+            geometry = tile_starts(tiles)
             bounds = tiles[["minx", "miny", "maxx", "maxy"]].to_numpy()
-            sources = self._open_sources(sdata, bounds, cast("TileGeometry", geometry), cs)
-        else:
-            geometry, sources = None, {}
+            sources = self._open_sources(sdata, bounds, geometry, cs)
         group = cast("zarr.Group", zarr.open_group(sdata.path, mode="r")["tables"])[table_name]
         adata = load_all_aligned(group)
         obs = adata.obs if self._annotations is None else adata.obs[self._annotations]

@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import math
 import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-import anndata as ad
 import numpy as np
-import scipy.sparse as sp
 import zarr
 from annbatch.io import DATASET_PREFIX, V1_ENCODING, DatasetCollection, write_sharded
 from annbatch.utils import load_all_aligned
@@ -29,6 +28,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
     from os import PathLike
 
+    import anndata as ad
     import pandas as pd
     from spatialdata import SpatialData
     from zarr.abc.codec import BytesBytesCodec
@@ -55,7 +55,7 @@ def _copy_sharded(
     height, width = src.shape[-2:]
     chunk_hw = (min(chunk, height), min(chunk, width))
     # A shard must hold whole chunks: for an array smaller than a shard, round its side up to the chunk grid.
-    shard_hw = tuple(min(shard, -(-side // c) * c) for side, c in zip((height, width), chunk_hw, strict=True))
+    shard_hw = tuple(min(shard, math.ceil(side / c) * c) for side, c in zip((height, width), chunk_hw, strict=True))
     dst = group.create_array(
         name,
         shape=src.shape,
@@ -90,7 +90,6 @@ def write_sharded_sdata(
     image_shard: int = 4096,
     compressors: Iterable[BytesBytesCodec] = (ZstdCodec(level=3),),
     load_table: Callable[[ad.AnnData], ad.AnnData] | None = None,
-    write_X: bool = True,
 ) -> None:
     """Write one backed :class:`spatialdata.SpatialData` as a dataset of a spatialbatch collection.
 
@@ -139,16 +138,14 @@ def write_sharded_sdata(
     load_table
         Called on the table before it is written, like `load_adata` in :meth:`annbatch.DatasetCollection.add_adatas`:
         keep the ``obs`` columns you need, use ``layers["counts"]`` as ``X``, cast to one dtype... It must keep the
-        rows (same ``obs_names`` in the same order), as they are tied to the tiles.
-    write_X
-        Whether to write the expression. If ``False``, ``X`` is an empty ``(n_obs, 0)`` matrix, for collections only
-        ever loaded for their pixels.
+        rows (same ``obs_names`` in the same order), as they are tied to the tiles. For a collection only ever loaded
+        for its pixels, return ``table[:, []]`` (no genes).
     """
     if not sdata.is_backed():
         raise ValueError("`sdata` must be backed by a zarr store (use `spatialdata.read_zarr`).")
     if image_shard % image_chunk != 0:
         raise ValueError(f"image_shard ({image_shard}) must be divisible by image_chunk ({image_chunk}).")
-    if image_chunk > DEFAULT_TILE_PX or DEFAULT_TILE_PX % image_chunk != 0:
+    if DEFAULT_TILE_PX % image_chunk != 0:
         warnings.warn(
             f"image_chunk ({image_chunk}) does not divide the loader's {DEFAULT_TILE_PX}-pixel read window, so "
             "windows straddle more chunks than needed.",
@@ -165,8 +162,7 @@ def write_sharded_sdata(
     table, tiles = aligned_tiles(
         sdata, region, table_name, cs, tile_scale=tile_scale, tile_dim_in_units=tile_dim_in_units
     )
-    pixels = bool(images or labels)
-    geometry = tile_starts(tiles) if pixels else None
+    geometry = tile_starts(tiles) if images or labels else None
     order = morton_order(tiles["x"].to_numpy(), tiles["y"].to_numpy(), block_px)
 
     if load_table is not None:
@@ -174,8 +170,6 @@ def write_sharded_sdata(
         if not loaded.obs_names.equals(table.obs_names):
             raise ValueError("`load_table` must keep the rows of the table: same `obs_names`, in the same order.")
         table = loaded
-    if not write_X:
-        table = ad.AnnData(X=sp.csr_matrix((table.n_obs, 0), dtype=np.float32), obs=table.obs, obsm=table.obsm)
     adata = table[order].copy()
     adata.uns.pop("spatialdata_attrs", None)  # refers to the element names of the source, not to the collection
     if geometry is not None:
@@ -228,12 +222,11 @@ def open_dataset_group(
             f"{missing} are not in the collection, which has images {meta['images']} and labels {meta['labels']}."
         )
     adata = load_all_aligned(group)
+    geometry = None
     if images or labels:
         origin = np.asarray(adata.obsm["tile_origin"][...])
         height, width = meta["tile_hw"]
         geometry = TileGeometry(origin[:, 0].astype(np.int64), origin[:, 1].astype(np.int64), height, width)
-    else:
-        geometry = None
     sources: dict[str, _Source] = {}
     kinds: tuple[tuple[Literal["images", "labels"], Sequence[str]], ...] = (("images", images), ("labels", labels))
     for kind, names in kinds:

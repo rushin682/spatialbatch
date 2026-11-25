@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning][].
 - `Loader(table=False)` and empty `images` / `labels`: one collection written with all elements can be mini-batched
   for any subset of them (table only, images only, labels only...). Elements that are not requested are never read.
 - `write_sharded_sdata` / `SpatialDatasetCollection.add_sdatas`: `load_table`, a callback that chooses what of the table
-  is written (like `load_adata` in annbatch), and `write_X=False` to write no expression. `images` and `labels` may be
-  empty, for a table-only collection.
+  is written (like `load_adata` in annbatch), e.g. to write no expression. `images` and `labels` may be empty, for a
+  table-only collection.
 
 ### Changed
 
