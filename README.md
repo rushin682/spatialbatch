@@ -47,17 +47,25 @@ for batch in loader:
 > concurrent reads.
 > Pass `to="torch"` to get torch tensors, and `transform=...` for per-batch augmentation such as cropping or resizing.
 
-For the best throughput, write the stores once into a spatially sorted, sharded `SpatialDatasetCollection`:
+For the best throughput, write the stores once into a spatially sorted, sharded `SpatialDatasetCollection`, with
+every element you may need. Each loader then streams any subset of them (the table, images, labels), and never reads
+the others. Tiles are 1024 x 1024 pixels by default: crop them to your model's input in `transform`.
 
 ```python
-from spatialbatch import Loader, SpatialDatasetCollection
+from spatialbatch import Loader, SpatialDatasetCollection, center_crop
 
 collection = SpatialDatasetCollection("collection.zarr")
-collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=["cell_labels"], tile_dim_in_units=224)
-loader = Loader(images=["morphology_focus"], batch_size=32, shuffle=True, tile_dim_in_units=224).use_collection(
+collection.add_sdatas(["a.zarr", "b.zarr"], images=["morphology_focus"], labels=["cell_labels"])
+
+tiles = Loader(
+    table=False, images=["morphology_focus"], transform=lambda b: center_crop(b, 224), shuffle=True
+).use_collection(collection)  # image tiles only, (32, 1, 224, 224)
+expression = Loader(images=(), batch_size=4096, chunk_size=512, preload_nchunks=32, shuffle=True).use_collection(
     collection
-)
+)  # the table only, like a single-cell loader
 ```
+
+See the [tutorials][documentation] for the table, images and multi-modal workflows.
 
 Images that are not in the pixel grid of the coordinate system, such as an H&E image registered to the slide with a
 rotation or a scaling, are tiled with one spatialdata call per tile, which is much slower, and cannot be written to a

@@ -31,22 +31,23 @@ class SpatialLoaderOutput(TypedDict):
     Attributes
     ----------
     X
-        The expression matrix of the batch, ``(batch, n_var)``, sparse unless the loader densifies it.
+        The expression matrix of the batch, ``(batch, n_var)``, sparse unless the loader densifies it, or ``None`` if
+        the loader was built with ``table=False``.
     obs
         The ``obs`` rows of the batch, or ``None`` when the table has no ``obs`` columns.
     var
-        The ``var`` annotations.
+        The ``var`` annotations, or ``None`` if the loader was built with ``table=False``.
     index
         Position of each row in the loader (across all added SpatialData objects), or ``None``.
     images
-        ``{image name: (batch, channels, height, width)}``.
+        ``{image name: (batch, channels, height, width)}``, empty if no images are loaded.
     labels
-        ``{labels name: (batch, height, width)}``.
+        ``{labels name: (batch, height, width)}``, empty if no labels are loaded.
     coords
         ``obsm["spatial"]`` of the batch, ``(batch, 2)``, or ``None``.
     """
 
-    X: OutputInMemoryArray_T.__value__
+    X: OutputInMemoryArray_T.__value__ | None
     obs: pd.DataFrame | None
     var: pd.DataFrame | None
     index: np.ndarray | None

@@ -8,7 +8,17 @@
 :maxdepth: 1
 
 installation.md
-quickstart.md
+```
+
+```{toctree}
+:caption: Tutorials
+:hidden: true
+:maxdepth: 1
+
+tutorials/quickstart
+tutorials/scrnaseq
+tutorials/images
+tutorials/multimodal
 ```
 
 ```{toctree}

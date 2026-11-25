@@ -33,6 +33,17 @@
     align_to_cs
 ```
 
+## Transforms
+
+Helpers for the `transform` of a {class}`~spatialbatch.Loader`.
+
+```{eval-rst}
+.. autosummary::
+    :toctree: generated
+
+    center_crop
+```
+
 ## Samplers
 
 The abstract {class}`annbatch.abc.Sampler` is shared with annbatch, as is {class}`annbatch.samplers.SequentialSampler`.

@@ -29,3 +29,6 @@ benchmarks/
 # worktrees & claude files
 .claude/
 CLAUDE.md
+
+# tutorial outputs
+/docs/tutorials/*.zarr

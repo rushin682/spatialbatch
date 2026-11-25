@@ -19,8 +19,9 @@ class RandomSampler(_AnnbatchRandomSampler):
     Worker sharding and per-worker RNG spawning are inherited.
 
     What differs are the defaults, which are tuned for pixels rather than expression rows.
-    A cell tile is ~100 KB (one 224x224 uint16 channel), about two orders of magnitude heavier than a sparse expression row,
-    so one request defaults to ``64 * 8 = 512`` tiles instead of ``512 * 32`` rows.
+    A default cell tile is 2 MB (one 1024x1024 uint16 channel), several thousand times heavier than a sparse expression
+    row, so one request defaults to ``16 * 8 = 128`` tiles (256 MB per channel) instead of ``512 * 32`` rows. When
+    streaming only the table (``Loader(images=(), labels=())``), use annbatch-sized chunks instead.
     Chunks are most effective when consecutive rows are spatially close, which
     :class:`~spatialbatch.SpatialDatasetCollection` guarantees by storing cells in Morton (Z-order) order.
 
@@ -46,7 +47,7 @@ class RandomSampler(_AnnbatchRandomSampler):
 
     def __init__(
         self,
-        chunk_size: int = 64,
+        chunk_size: int = 16,
         preload_nchunks: int = 8,
         batch_size: int = 32,
         *,
