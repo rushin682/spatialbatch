@@ -111,11 +111,11 @@ def test_errors(synthetic, make, tmp_path):
     with pytest.raises(ValueError, match="Cannot specify"):
         Loader(batch_sampler=RandomSampler(4, 2, 4), batch_size=2)
     with pytest.raises(ValueError, match="At least one"):
-        Loader(images=[])
+        Loader(table=False, images=[], labels=[])
     with pytest.raises(TypeError, match="add_sdata"):
         Loader().add_adata(None)
     with pytest.raises(ValueError, match="same integer size"):
-        Loader(images=["img"], tile_scale=2.0).add_sdata(
+        Loader(images=["img"], tile_dim_in_units=None, tile_scale=2.0).add_sdata(
             make(tmp_path / "v.zarr", radius=np.linspace(2, 6, 200))[0], **KW
         )
     with pytest.raises(ValueError, match="not valid for the region"):

@@ -19,6 +19,7 @@ from xarray import DataArray, DataTree
 from spatialbatch.samplers import RandomSampler, SequentialSampler
 
 from .utils import (
+    DEFAULT_TILE_PX,
     TileGeometry,
     aligned_tiles,
     element_to_cs_matrix,
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 __all__ = ["Loader"]
 
 # Side of the grid used to group the tiles of one request into windows that are each read from disk once.
-_WINDOW_PX = 1024
+_WINDOW_PX = DEFAULT_TILE_PX
 
 
 @dataclass
@@ -63,7 +64,7 @@ class _Source:
 class _Item:
     """Everything the loader keeps about one SpatialData object besides its table ``X`` / ``obs`` / ``var``."""
 
-    geometry: TileGeometry
+    geometry: TileGeometry | None  # ``None`` when no images or labels are loaded
     sources: dict[str, _Source]
     coords: np.ndarray | None
 
@@ -112,6 +113,10 @@ class Loader(AnnbatchLoader):
     things annbatch does (its ``X`` expression, ``obs`` and ``index``) plus a tile of every requested image and labels
     element, centered on the cell, so that all modalities of a batch are aligned along axis 0.
 
+    Each of the three element types is optional: set ``table=False`` to skip the expression, and leave `images` or
+    `labels` empty to skip pixels, so that one :class:`~spatialbatch.SpatialDatasetCollection` written with all of them
+    can be mini-batched for any subset. Elements that are not requested are never read.
+
     It follows annbatch's recipe. A :class:`~annbatch.abc.Sampler` emits :class:`~annbatch.types.LoadRequest` s, each a
     set of chunks of consecutive rows; one request is read from disk **at once**, concurrently for ``X`` and for every
     modality, through async :mod:`zarr` (and `zarrs` if configured, see :doc:`/zarr-configuration`); the in-memory
@@ -127,15 +132,21 @@ class Loader(AnnbatchLoader):
 
     Parameters
     ----------
+    table
+        Whether to read and yield the table's expression (``X`` and ``var``). If ``False`` they are ``None`` in every
+        batch and ``X`` is never read; ``obs`` (see `return_annotations`) and ``coords`` are still yielded.
     images
-        Names of the image elements to tile.
+        Names of the image elements to tile. May be empty.
     labels
-        Names of the labels elements to tile.
+        Names of the labels elements to tile. May be empty.
     tile_scale
-        Tile size as a multiple of the region's diameter, ignored if `tile_dim_in_units` is set.
+        Tile size as a multiple of the region's diameter, used only if `tile_dim_in_units` is ``None``.
         See ``spatialstream.dataloaders.XeniumDataset``.
     tile_dim_in_units
-        Side of the tile in units of the coordinate system. All tiles of a loader must have the same integer size.
+        Side of the tile in units of the coordinate system, 1024 by default (pixels for Xenium's ``global``). All tiles
+        of a loader must have the same integer size. Load a large context and crop it to the size a model needs with
+        `transform`, e.g. with ``torchvision.transforms.v2.CenterCrop``: tiles are centered on their cell, so a
+        center crop keeps the cell centered. A collection's tiles have the size it was written with.
     rasterize
         Mirror of ``XeniumDataset``: whether tiles are produced with :func:`spatialdata.rasterize` (``True``) or
         :func:`spatialdata.bounding_box_query` (``False``). It only matters on the spatialdata path.
@@ -152,7 +163,7 @@ class Loader(AnnbatchLoader):
         If not provided, a :class:`~spatialbatch.samplers.RandomSampler` (if `shuffle`) or
         :class:`~annbatch.samplers.SequentialSampler` is built from the arguments below.
     chunk_size
-        Number of consecutive cells per chunk. Mutually exclusive with `batch_sampler`. Defaults to 64.
+        Number of consecutive cells per chunk. Mutually exclusive with `batch_sampler`. Defaults to 16.
     preload_nchunks
         Number of chunks per request. Mutually exclusive with `batch_sampler`. Defaults to 8.
     shuffle
@@ -187,7 +198,7 @@ class Loader(AnnbatchLoader):
     _collection_added: bool  # set by annbatch's Loader, which ships no type information
 
     _COMMON_SAMPLER_ARGS = {
-        "chunk_size": 64,
+        "chunk_size": 16,
         "preload_nchunks": 8,
         "batch_size": 32,
         "drop_last": False,
@@ -200,10 +211,11 @@ class Loader(AnnbatchLoader):
     def __init__(
         self,
         *,
+        table: bool = True,
         images: Sequence[str] = ("morphology_focus",),
         labels: Sequence[str] = (),
         tile_scale: float = 1.0,
-        tile_dim_in_units: float | None = None,
+        tile_dim_in_units: float | None = DEFAULT_TILE_PX,
         rasterize: bool = False,
         rasterize_kwargs: Mapping[str, Any] = MappingProxyType({}),
         pad_value: float = 0,
@@ -242,8 +254,9 @@ class Loader(AnnbatchLoader):
                 preload_to_gpu=False,
                 to=to,
             )
-        if not images and not labels:
-            raise ValueError("At least one of `images` and `labels` must be given.")
+        if not table and not images and not labels:
+            raise ValueError("At least one of `table`, `images` and `labels` must be requested.")
+        self._table = table
         self._image_names, self._label_names = tuple(images), tuple(labels)
         self._tile_scale, self._tile_dim_in_units = tile_scale, tile_dim_in_units
         self._rasterize, self._rasterize_kwargs = rasterize, dict(rasterize_kwargs)
@@ -284,13 +297,15 @@ class Loader(AnnbatchLoader):
             raise ValueError("`sdata` must be backed by a zarr store (use `spatialdata.read_zarr`) to be streamed.")
         validate_inputs(sdata, region, self._image_names, self._label_names, cs, table_name)
 
-        _, tiles = aligned_tiles(
-            sdata, region, table_name, cs, tile_scale=self._tile_scale, tile_dim_in_units=self._tile_dim_in_units
-        )
-        geometry = tile_starts(tiles)
-        bounds = tiles[["minx", "miny", "maxx", "maxy"]].to_numpy()
-
-        sources = self._open_sources(sdata, bounds, geometry, cs)
+        geometry: TileGeometry | None = None
+        sources: dict[str, _Source] = {}
+        if self._image_names or self._label_names:
+            _, tiles = aligned_tiles(
+                sdata, region, table_name, cs, tile_scale=self._tile_scale, tile_dim_in_units=self._tile_dim_in_units
+            )
+            geometry = tile_starts(tiles)
+            bounds = tiles[["minx", "miny", "maxx", "maxy"]].to_numpy()
+            sources = self._open_sources(sdata, bounds, geometry, cs)
         group = cast("zarr.Group", zarr.open_group(sdata.path, mode="r")["tables"])[table_name]
         adata = load_all_aligned(group)
         obs = adata.obs if self._annotations is None else adata.obs[self._annotations]
@@ -331,7 +346,7 @@ class Loader(AnnbatchLoader):
     def _add_item(self, X: Any, obs: pd.DataFrame | None, var: pd.DataFrame | None, item: _Item) -> None:
         """Add a dataset together with its pixel sources, atomically."""
         signature = {name: src.signature for name, src in item.sources.items()}
-        hw = (item.geometry.height, item.geometry.width)
+        hw = None if item.geometry is None else (item.geometry.height, item.geometry.width)
         if self._items:
             if signature != self._signature:
                 raise ValueError(
@@ -377,8 +392,10 @@ class Loader(AnnbatchLoader):
     @property
     def n_tiles_px(self) -> tuple[int, int]:
         """Height and width in pixels of every tile."""
-        if self._tile_hw is None:
+        if not self._items:
             raise ValueError("No datasets added yet")
+        if self._tile_hw is None:
+            raise ValueError("This loader reads no images or labels, so it has no tiles.")
         return self._tile_hw
 
     # -- reading -------------------------------------------------------------------------------------------------
@@ -388,7 +405,9 @@ class Loader(AnnbatchLoader):
 
         The buffers have the row order of the ``X`` buffer of :meth:`_index_datasets`: grouped by dataset.
         """
-        assert self._signature is not None and self._tile_hw is not None
+        if not self._signature:
+            return {}
+        assert self._tile_hw is not None
         total = sum(len(rows) for rows in dataset_index_to_rows.values())
         th, tw = self._tile_hw
         buffers = {
@@ -401,6 +420,7 @@ class Loader(AnnbatchLoader):
             for name, source in item.sources.items():
                 out = buffers[name][offset : offset + len(rows)]
                 if source.fallback is None:
+                    assert item.geometry is not None
                     tasks.append(self._fetch_tiles(source, item.geometry, rows, out))
                 else:
                     tasks.append(self._fetch_tiles_fallback(source, rows, out))
@@ -466,7 +486,9 @@ class Loader(AnnbatchLoader):
     async def _index_all(
         self, dataset_index_to_rows: OrderedDict[int, np.ndarray]
     ) -> tuple[Any, dict[str, np.ndarray]]:
-        """Fetch ``X`` and all pixel modalities concurrently."""
+        """Fetch ``X`` (unless ``table=False``) and all pixel modalities concurrently."""
+        if not self._table:
+            return None, await self._index_pixels(dataset_index_to_rows)
         x, pixels = await asyncio.gather(
             self._index_datasets(dataset_index_to_rows), self._index_pixels(dataset_index_to_rows)
         )
@@ -502,7 +524,9 @@ class Loader(AnnbatchLoader):
 
             raw_out, pixels = zsync.sync(self._index_all(dataset_index_to_rows))
 
-            if is_sparse:
+            if raw_out is None:
+                in_memory_data = None
+            elif is_sparse:
                 in_memory_data = self._sp_module.csr_matrix(
                     tuple(self._np_module.asarray(e) for e in raw_out.elems), shape=raw_out.shape, dtype=raw_out.dtype
                 )
@@ -514,11 +538,11 @@ class Loader(AnnbatchLoader):
             coords = self._maybe_accumulate_coords(dataset_index_to_rows)
             for split in splits:
                 sel = inv[split]
-                data = in_memory_data[sel]
+                data = None if in_memory_data is None else in_memory_data[sel]
                 batch: SpatialLoaderOutput = {
-                    "X": data if self._to is None else convert(data, False, self._to),
+                    "X": data if data is None or self._to is None else convert(data, False, self._to),
                     "obs": obs.iloc[sel] if obs is not None else None,
-                    "var": self._var,
+                    "var": self._var if self._table else None,
                     "index": index[sel] if index is not None else None,
                     "images": {name: self._convert_tiles(pixels[name][sel]) for name in self._image_names},
                     "labels": {name: self._convert_tiles(pixels[name][sel]) for name in self._label_names},

@@ -34,7 +34,7 @@ dependencies = [
   "scipy>1.15",
   # for debug logging (referenced from the issue template)
   "session-info2",
-  "spatialdata>=0.6.1",
+  "spatialdata[extra]>=0.6.1",
   "tqdm",
   "xarray",
   "zarr>=3.1.4",
@@ -60,11 +60,15 @@ test = [
 doc = [
   "ipykernel",
   "ipython",
+  "matplotlib",
+  "myst-nb>=1.1",
   "pandas",
   "scverse-doc[full]>=0.5",
   "scverse-misc[sphinx]>=0.1.8",
+  "spatialbatch[torch]",
   "sphinx-autodoc-typehints",
   "sphinxcontrib-bibtex>=1",
+  "torchvision",
 ]
 typecheck = [
   "mypy",
@@ -142,7 +146,7 @@ lint.ignore = [
 ]
 lint.per-file-ignores."*/__init__.py" = [ "F401" ]
 lint.per-file-ignores."benchmarks/*" = [ "B007", "D" ]
-lint.per-file-ignores."docs/*" = [ "I" ]
+lint.per-file-ignores."docs/*" = [ "D103", "I" ]
 lint.per-file-ignores."tests/*" = [ "D" ]
 lint.pydocstyle.convention = "numpy"
 

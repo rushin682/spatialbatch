@@ -30,6 +30,8 @@ if TYPE_CHECKING:
     from spatialbatch.types import SpatialLoaderOutput
 
 __all__ = [
+    "DEFAULT_PIXEL_CHUNK",
+    "DEFAULT_TILE_PX",
     "TileGeometry",
     "aligned_tiles",
     "element_to_cs_matrix",
@@ -42,6 +44,11 @@ __all__ = [
     "to_spatialstream_batch",
     "validate_inputs",
 ]
+
+#: Default side of a tile in pixels, and of the windows the loader reads and orders cells by.
+DEFAULT_TILE_PX = 1024
+#: Default side in pixels of the zarr chunks of images and labels written to a collection: 8 chunks per tile side.
+DEFAULT_PIXEL_CHUNK = DEFAULT_TILE_PX // 8
 
 
 def validate_inputs(
@@ -268,6 +275,8 @@ def to_spatialstream_batch(
     shapes ``(B, C, H, W)``, ``(B, 1, n_var)``, ``(B, 1, 2)`` and ``(B, 1, n_annotations)``.
     """
     X = batch["X"]
+    if X is None:
+        raise ValueError("The batch has no expression: build the loader with `table=True`.")
     gexp = X.toarray() if hasattr(X, "toarray") else np.asarray(X)
     out: dict[str, Any] = {"image": batch["images"][image], "gexp": gexp[:, None, :]}
     if batch["coords"] is not None:
