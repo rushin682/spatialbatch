@@ -7,8 +7,6 @@ import zarr
 from spatialbatch import Loader, SpatialDatasetCollection
 from spatialbatch.utils import morton_order
 
-from .conftest import reference_tile
-
 TILE = 32
 TILES = {"tile_dim_in_units": TILE}
 KW = {"region": "cells"}
@@ -104,7 +102,7 @@ def test_collection_matches_in_place_loading(collection, synthetic):
     assert compared == 200
 
 
-def test_add_sdatas_accepts_a_subset_of_a_backed_sdata(synthetic, tmp_path):
+def test_add_sdatas_accepts_a_subset_of_a_backed_sdata(synthetic, ref_tile, tmp_path):
     sdata, raw = synthetic
     keep = np.arange(sdata.tables["table"].n_obs) % 3 == 0  # e.g. the spots in tissue
     kept_ids = raw["ids"][keep]
@@ -129,7 +127,7 @@ def test_add_sdatas_accepts_a_subset_of_a_backed_sdata(synthetic, tmp_path):
     for batch in loader.use_collection(collection):
         for row, instance in enumerate(batch["obs"]["instance_id"]):
             cx, cy = raw["centers"][int(str(instance).split("-")[1])]
-            np.testing.assert_array_equal(batch["images"]["img"][row], reference_tile(raw["image"], cx, cy))
+            np.testing.assert_array_equal(batch["images"]["img"][row], ref_tile(raw["image"], cx, cy))
 
 
 def test_collection_errors(synthetic, tmp_path):
