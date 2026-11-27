@@ -69,6 +69,19 @@ class _Item:
     coords: np.ndarray | None
 
 
+@dataclass
+class _Loaded:
+    """One request read into memory: what :meth:`Loader._iter` slices its batches from."""
+
+    X: Any  # the expression of the request in buffer order, ``None`` if ``table=False``
+    pixels: dict[str, np.ndarray]  # in batch order: the tiles of batch ``b`` are a contiguous slice
+    obs: pd.DataFrame | None
+    index: np.ndarray | None
+    coords: np.ndarray | None
+    inv: np.ndarray  # position in the request -> row of `X`, `obs`, `index` and `coords`
+    splits: list[np.ndarray]  # the positions in the request of each batch
+
+
 class _SpatialdataTile:
     """Produce one tile with :func:`spatialdata.rasterize` / :func:`spatialdata.bounding_box_query`, as ``XeniumDataset`` does.
 
@@ -176,6 +189,9 @@ class Loader(AnnbatchLoader):
         Random number generator for shuffling. Mutually exclusive with `batch_sampler`.
     return_index
         Whether to yield the position of each row in the loader.
+    prefetch
+        Whether to read the next request in a background thread while the batches of the current one are consumed, so
+        that reading overlaps with the training step. Two requests are then in memory at once.
     to
         Output library for `X` and for the tiles.
 
@@ -229,6 +245,7 @@ class Loader(AnnbatchLoader):
         drop_last: bool | None = None,
         rng: np.random.Generator | None = None,
         return_index: bool = False,
+        prefetch: bool = True,
         to: Literal["torch", "jax"] | None = None,
     ):
         if batch_sampler is None:
@@ -263,6 +280,7 @@ class Loader(AnnbatchLoader):
         self._pad_value = pad_value
         self._annotations = [return_annotations] if isinstance(return_annotations, str) else return_annotations
         self.transform = transform
+        self._prefetch = prefetch
         self._items = []
 
     # -- adding data ---------------------------------------------------------------------------------------------
@@ -400,15 +418,20 @@ class Loader(AnnbatchLoader):
 
     # -- reading -------------------------------------------------------------------------------------------------
 
-    async def _index_pixels(self, dataset_index_to_rows: OrderedDict[int, np.ndarray]) -> dict[str, np.ndarray]:
+    async def _index_pixels(
+        self, dataset_index_to_rows: OrderedDict[int, np.ndarray], destination: np.ndarray | None = None
+    ) -> dict[str, np.ndarray]:
         """Fetch the tiles of the requested rows of every modality into preallocated buffers.
 
-        The buffers have the row order of the ``X`` buffer of :meth:`_index_datasets`: grouped by dataset.
+        The row ``j`` of the ``X`` buffer of :meth:`_index_datasets` (grouped by dataset) has its tile at row
+        ``destination[j]`` of the buffers, or at row ``j`` if `destination` is ``None``. Choosing it as the position
+        of the row in its batch makes every batch a contiguous slice, with no copy to gather it.
         """
         if not self._signature:
             return {}
         assert self._tile_hw is not None
         total = sum(len(rows) for rows in dataset_index_to_rows.values())
+        destination = np.arange(total, dtype=np.intp) if destination is None else destination
         th, tw = self._tile_hw
         buffers = {
             name: np.empty((total, *(() if channels is None else (channels,)), th, tw), dtype)
@@ -417,20 +440,31 @@ class Loader(AnnbatchLoader):
         tasks, offset = [], 0
         for dataset_idx, rows in dataset_index_to_rows.items():
             item = self._items[dataset_idx]
+            dest = destination[offset : offset + len(rows)]
             for name, source in item.sources.items():
-                out = buffers[name][offset : offset + len(rows)]
                 if source.fallback is None:
                     assert item.geometry is not None
-                    tasks.append(self._fetch_tiles(source, item.geometry, rows, out))
+                    tasks.append(self._fetch_tiles(source, item.geometry, rows, buffers[name], dest))
                 else:
-                    tasks.append(self._fetch_tiles_fallback(source, rows, out))
+                    tasks.append(self._fetch_tiles_fallback(source, rows, buffers[name], dest))
             offset += len(rows)
         await asyncio.gather(*tasks)
         return buffers
 
-    async def _fetch_tiles(self, source: _Source, geometry: TileGeometry, rows: np.ndarray, out: np.ndarray) -> None:
-        """Fill `out` with the tiles of `rows`, reading each window of the array that holds several tiles only once."""
+    async def _fetch_tiles(
+        self,
+        source: _Source,
+        geometry: TileGeometry,
+        rows: np.ndarray,
+        out: np.ndarray,
+        dest: np.ndarray | None = None,
+    ) -> None:
+        """Fill ``out[dest]`` with the tiles of `rows`, reading each window of the array that holds several tiles once.
+
+        `dest` is the row of `out` of each of `rows`, by default ``0, 1, ...``.
+        """
         assert source.array is not None
+        dest = np.arange(len(rows), dtype=np.intp) if dest is None else dest
         th, tw = geometry.height, geometry.width
         height, width = source.array.shape[-2:]
         y0, x0 = geometry.y0[rows], geometry.x0[rows]
@@ -439,7 +473,7 @@ class Loader(AnnbatchLoader):
         inside = (cy1 > cy0) & (cx1 > cx0)
         whole = inside & (cy1 - cy0 == th) & (cx1 - cx0 == tw)
         if not whole.all():  # only the tiles at the border
-            out[~whole] = self._pad_value
+            out[dest[~whole]] = self._pad_value
         members = np.flatnonzero(inside)
         if members.size == 0:
             return
@@ -457,7 +491,7 @@ class Loader(AnnbatchLoader):
                 "np.ndarray", await arr.getitem(selection if source.channels is None else (slice(None), *selection))
             )
             for j, sy0, sy1, sx0, sx1, dy0, dx0 in zip(
-                group.tolist(),
+                dest[group].tolist(),
                 (cy0[group] - wy0).tolist(),
                 (cy1[group] - wy0).tolist(),
                 (cx0[group] - wx0).tolist(),
@@ -470,27 +504,30 @@ class Loader(AnnbatchLoader):
 
         await asyncio.gather(*(read_window(g) for g in np.split(members, bounds)))
 
-    async def _fetch_tiles_fallback(self, source: _Source, rows: np.ndarray, out: np.ndarray) -> None:
-        """Fill `out` with one spatialdata call per tile, spread over threads."""
+    async def _fetch_tiles_fallback(
+        self, source: _Source, rows: np.ndarray, out: np.ndarray, dest: np.ndarray | None = None
+    ) -> None:
+        """Fill ``out[dest]`` with one spatialdata call per tile, spread over threads."""
         fallback = source.fallback
         assert fallback is not None
+        dest = np.arange(len(rows), dtype=np.intp) if dest is None else dest
         n_threads = zarr.config.get("threading.max_workers") or os.cpu_count() or 1
 
         def work() -> None:
             with ThreadPoolExecutor(max_workers=n_threads) as pool:
-                for j, tile in enumerate(pool.map(fallback, rows.tolist())):
+                for j, tile in zip(dest.tolist(), pool.map(fallback, rows.tolist()), strict=True):
                     out[j] = tile
 
         await asyncio.get_running_loop().run_in_executor(None, work)
 
     async def _index_all(
-        self, dataset_index_to_rows: OrderedDict[int, np.ndarray]
+        self, dataset_index_to_rows: OrderedDict[int, np.ndarray], destination: np.ndarray
     ) -> tuple[Any, dict[str, np.ndarray]]:
-        """Fetch ``X`` (unless ``table=False``) and all pixel modalities concurrently."""
+        """Fetch ``X`` (unless ``table=False``) and all pixel modalities concurrently, see :meth:`_index_pixels`."""
         if not self._table:
-            return None, await self._index_pixels(dataset_index_to_rows)
+            return None, await self._index_pixels(dataset_index_to_rows, destination)
         x, pixels = await asyncio.gather(
-            self._index_datasets(dataset_index_to_rows), self._index_pixels(dataset_index_to_rows)
+            self._index_datasets(dataset_index_to_rows), self._index_pixels(dataset_index_to_rows, destination)
         )
         return x, pixels
 
@@ -503,52 +540,83 @@ class Loader(AnnbatchLoader):
             parts.append(coords[rows])
         return np.concatenate(parts)
 
+    def _load(self, load_request: Mapping[str, Any]) -> _Loaded:
+        """Read one request from disk: the expression, and the tiles in the order of the batches that split it."""
+        requests_to_load = load_request.get("requests", None)
+        if requests_to_load is None:
+            raise KeyError("load_request must contain either 'requests'.")
+        splits = load_request["splits"]
+
+        dataset_index_to_rows, order = self._requests_to_dataset_rows(requests_to_load)
+        # `order[j]` is the position in the request of row ``j`` of the buffers, grouped by dataset: `inv` undoes it.
+        n = order.size
+        inv = np.empty(n, dtype=np.intp)
+        inv[order] = np.arange(n, dtype=np.intp)
+        # The tiles are written in the order of the batches (the rows that no batch holds, if the last one is
+        # dropped, go last), so that a batch is a slice of the buffer rather than a copy gathered from it.
+        in_batches = np.concatenate(splits) if len(splits) else np.empty(0, dtype=np.intp)
+        left_out = np.setdiff1d(np.arange(n, dtype=np.intp), in_batches, assume_unique=True)
+        batch_row = np.empty(n, dtype=np.intp)
+        batch_row[np.concatenate([in_batches, left_out])] = np.arange(n, dtype=np.intp)
+
+        raw_out, pixels = zsync.sync(self._index_all(dataset_index_to_rows, batch_row[order]))
+        if raw_out is None:
+            in_memory_data = None
+        elif not issubclass(self.dataset_type, zarr.Array):
+            in_memory_data = self._sp_module.csr_matrix(
+                tuple(self._np_module.asarray(e) for e in raw_out.elems), shape=raw_out.shape, dtype=raw_out.dtype
+            )
+        else:
+            in_memory_data = self._np_module.asarray(raw_out)
+        return _Loaded(
+            in_memory_data,
+            pixels,
+            self._maybe_accumulate_obs(dataset_index_to_rows),
+            self._maybe_accumulate_indices(dataset_index_to_rows),
+            self._maybe_accumulate_coords(dataset_index_to_rows),
+            inv,
+            splits,
+        )
+
+    def _batches(self, loaded: _Loaded) -> Iterator[SpatialLoaderOutput]:
+        """The batches of one request: the rows of ``X``, ``obs``... of each split, and its slice of the tiles."""
+        start = 0
+        for split in loaded.splits:
+            stop = start + len(split)
+            sel = loaded.inv[split]
+            data = None if loaded.X is None else loaded.X[sel]
+            batch: SpatialLoaderOutput = {
+                "X": data if data is None or self._to is None else convert(data, False, self._to),
+                "obs": loaded.obs.iloc[sel] if loaded.obs is not None else None,
+                "var": self._var if self._table else None,
+                "index": loaded.index[sel] if loaded.index is not None else None,
+                "images": {name: self._convert_tiles(loaded.pixels[name][start:stop]) for name in self._image_names},
+                "labels": {name: self._convert_tiles(loaded.pixels[name][start:stop]) for name in self._label_names},
+                "coords": loaded.coords[sel] if loaded.coords is not None else None,
+            }
+            start = stop
+            yield batch if self.transform is None else self.transform(batch)
+
     def _iter(self) -> Iterator[SpatialLoaderOutput]:  # type: ignore[override]
         check_lt_1([len(self._train_datasets), self.n_obs], ["Number of datasets", "Number of observations"])
-        is_sparse = not issubclass(self.dataset_type, zarr.Array)
-        positions = np.empty(0, dtype=np.intp)
-        for load_request in self._batch_sampler.sample(self.n_obs):
-            requests_to_load = load_request.get("requests", None)
-            if requests_to_load is None:
-                raise KeyError("load_request must contain either 'requests'.")
-            splits = load_request["splits"]
-
-            dataset_index_to_rows, order = self._requests_to_dataset_rows(requests_to_load)
-            # See annbatch.Loader._iter: `inv` maps a position in the request to its position in the buffers.
-            n = order.size
-            inv_buffer = np.empty(n, dtype=np.intp)
-            if n > positions.size:
-                positions = np.arange(n, dtype=np.intp)
-            inv = inv_buffer[:n]
-            inv[order] = positions[:n]
-
-            raw_out, pixels = zsync.sync(self._index_all(dataset_index_to_rows))
-
-            if raw_out is None:
-                in_memory_data = None
-            elif is_sparse:
-                in_memory_data = self._sp_module.csr_matrix(
-                    tuple(self._np_module.asarray(e) for e in raw_out.elems), shape=raw_out.shape, dtype=raw_out.dtype
-                )
-            else:
-                in_memory_data = self._np_module.asarray(raw_out)
-
-            obs = self._maybe_accumulate_obs(dataset_index_to_rows)
-            index = self._maybe_accumulate_indices(dataset_index_to_rows)
-            coords = self._maybe_accumulate_coords(dataset_index_to_rows)
-            for split in splits:
-                sel = inv[split]
-                data = None if in_memory_data is None else in_memory_data[sel]
-                batch: SpatialLoaderOutput = {
-                    "X": data if data is None or self._to is None else convert(data, False, self._to),
-                    "obs": obs.iloc[sel] if obs is not None else None,
-                    "var": self._var if self._table else None,
-                    "index": index[sel] if index is not None else None,
-                    "images": {name: self._convert_tiles(pixels[name][sel]) for name in self._image_names},
-                    "labels": {name: self._convert_tiles(pixels[name][sel]) for name in self._label_names},
-                    "coords": coords[sel] if coords is not None else None,
-                }
-                yield batch if self.transform is None else self.transform(batch)
+        requests = iter(self._batch_sampler.sample(self.n_obs))
+        if not self._prefetch:
+            for load_request in requests:
+                yield from self._batches(self._load(load_request))
+            return
+        # One reader thread: the next request is read (zarr's own threads and event loop do the work, and release the
+        # GIL) while the consumer works on the batches of this one.
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="spatialbatch-prefetch")
+        try:
+            first = next(requests, None)
+            pending = None if first is None else pool.submit(self._load, first)
+            while pending is not None:
+                loaded = pending.result()
+                following = next(requests, None)
+                pending = None if following is None else pool.submit(self._load, following)
+                yield from self._batches(loaded)
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
     def _convert_tiles(self, tiles: np.ndarray) -> Any:
         return tiles if self._to is None else convert(tiles, False, self._to)
