@@ -36,6 +36,50 @@ def test_tiles_are_the_pixels_under_each_cell(synthetic, ref_tile):
     assert seen == 200
 
 
+def test_prefetch_gives_the_same_batches(synthetic, make, tmp_path):
+    sdata, _ = synthetic
+    other, _ = make(tmp_path / "b.zarr", n_cells=150, seed=1, shape=(280, 300))
+
+    def batches(prefetch: bool) -> list:
+        loader = _loader(
+            batch_size=16,
+            chunk_size=8,
+            preload_nchunks=4,
+            shuffle=True,
+            rng=np.random.default_rng(0),
+            prefetch=prefetch,
+        ).add_sdatas([sdata, other], **KW)
+        return list(loader)
+
+    with_prefetch, without = batches(True), batches(False)
+    assert len(with_prefetch) == len(without) == -(-350 // 16)
+    for a, b in zip(with_prefetch, without, strict=True):
+        np.testing.assert_array_equal(a["index"], b["index"])
+        np.testing.assert_array_equal(a["images"]["img"], b["images"]["img"])
+        np.testing.assert_array_equal(a["labels"]["lab"], b["labels"]["lab"])
+        np.testing.assert_array_equal(a["coords"], b["coords"])
+        assert (a["X"] != b["X"]).nnz == 0
+        assert a["obs"].equals(b["obs"])
+
+
+def test_tiles_are_right_when_rows_of_the_last_request_are_dropped(synthetic, ref_tile):
+    sdata, raw = synthetic
+    # requests of 36 rows and batches of 12: the last request has 16 or 20 rows, so one batch and the rows that no batch
+    # holds, which are read too and must not shift the tiles of the batch
+    loader = _loader(
+        batch_size=12, chunk_size=6, preload_nchunks=6, drop_last=True, shuffle=True, rng=np.random.default_rng(1)
+    ).add_sdata(sdata, **KW)
+    seen = 0
+    for batch in loader:
+        assert len(batch["index"]) == 12
+        for row, idx in enumerate(batch["index"]):
+            cx, cy = raw["centers"][idx]
+            np.testing.assert_array_equal(batch["images"]["img"][row], ref_tile(raw["image"], cx, cy))
+            assert batch["obs"]["label"].iloc[row] == idx + 1
+            seen += 1
+    assert 0 < seen < 200
+
+
 def test_every_cell_is_visited_once_per_epoch(synthetic, make, tmp_path):
     sdata, _ = synthetic
     other, _ = make(tmp_path / "b.zarr", n_cells=150, seed=1)

@@ -95,9 +95,9 @@ def write_sharded_sdata(
 
     The counterpart of :func:`annbatch.write_sharded`. What it writes at ``group[key]``:
 
-    - the table, with its rows sorted along a Morton (Z-order) curve of the tile centers so that consecutive rows
-      are spatially close, written with :func:`annbatch.write_sharded`, plus ``obsm["tile_origin"]``, the first
-      pixel ``(x, y)`` of each tile;
+    - the table, with its rows sorted along a Morton (Z-order) curve of the first pixel of each tile (the tile centers
+      if no pixels are written) so that consecutive rows are spatially close, written with
+      :func:`annbatch.write_sharded`, plus ``obsm["tile_origin"]``, the first pixel ``(x, y)`` of each tile;
     - ``images/<name>`` and ``labels/<name>``: the full-resolution arrays as sharded zarr v3 arrays, chunked so that
       a tile touches few chunks and sharded so that a request is a few large reads.
 
@@ -128,6 +128,8 @@ def write_sharded_sdata(
         Names of the elements to write. Both may be empty, to write the table only.
     block_px
         Side in pixels of the grid used to order cells. Match it to the window the loader reads (1024 by default).
+        The loader reads one window per grid cell of the tile origins, which is why the rows are ordered by origin
+        and not by center: a block of centers straddles several windows, so a run of rows would be read as several.
     n_obs_per_chunk, shard_size
         Chunking of the table, see :func:`annbatch.write_sharded`.
     image_chunk, image_shard
@@ -163,7 +165,9 @@ def write_sharded_sdata(
         sdata, region, table_name, cs, tile_scale=tile_scale, tile_dim_in_units=tile_dim_in_units
     )
     geometry = tile_starts(tiles) if images or labels else None
-    order = morton_order(tiles["x"].to_numpy(), tiles["y"].to_numpy(), block_px)
+    # The loader groups tiles into the windows it reads by where they start, not by their center: order by that.
+    x, y = (tiles["x"].to_numpy(), tiles["y"].to_numpy()) if geometry is None else (geometry.x0, geometry.y0)
+    order = morton_order(x, y, block_px)
 
     if load_table is not None:
         loaded = load_table(table)
@@ -271,22 +275,23 @@ class SpatialDatasetCollection(DatasetCollection):
         """Not supported: a dataset of this collection holds pixels, written by :meth:`add_sdatas`."""
         raise TypeError("A SpatialDatasetCollection holds pixels too: use `add_sdatas`.")
 
-    def add_sdatas(self, sdata_paths: Iterable[str | PathLike[str]], **kwargs: Any) -> None:
+    def add_sdatas(self, sdatas: Iterable[str | PathLike[str] | SpatialData], **kwargs: Any) -> None:
         """Write SpatialData stores to the collection, each as a new dataset.
 
         Parameters
         ----------
-        sdata_paths
-            Paths to SpatialData zarr stores.
+        sdatas
+            Paths to SpatialData zarr stores, or backed :class:`spatialdata.SpatialData` objects read from them. Pass
+            an object to write a subset of a store: subset its table and region (e.g. the cells in tissue) and the
+            collection holds those rows, while the pixels are still read from the store it is backed by.
         **kwargs
             Passed to :func:`write_sharded_sdata`.
         """
         import spatialdata as sd
 
-        paths = list(sdata_paths)
+        items = list(sdatas)
         first = len(self._dataset_keys)
-        for i, path in enumerate(tqdm(paths, desc="Adding to collection")):
-            write_sharded_sdata(
-                self._group, sd.read_zarr(cast("str", path)), key=f"{DATASET_PREFIX}_{first + i}", **kwargs
-            )
+        for i, item in enumerate(tqdm(items, desc="Adding to collection")):
+            sdata = item if isinstance(item, sd.SpatialData) else sd.read_zarr(cast("str", item))
+            write_sharded_sdata(self._group, sdata, key=f"{DATASET_PREFIX}_{first + i}", **kwargs)
             self._group.update_attributes(V1_ENCODING)
