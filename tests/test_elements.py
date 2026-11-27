@@ -67,12 +67,13 @@ def test_unrequested_elements_are_never_read(collection, monkeypatch):
 
     monkeypatch.setattr(Loader, "_fetch_tiles", no_tiles)
     monkeypatch.setattr(Loader, "_index_datasets", count_x)
-    batch = next(iter(Loader(images=(), batch_size=8).use_collection(collection)))
+    # without prefetch: taking a batch reads that request only, not the next one in the background
+    batch = next(iter(Loader(images=(), batch_size=8, prefetch=False).use_collection(collection)))
     assert calls == {"X": 1, "tiles": 0}
     assert batch["images"] == {} and batch["labels"] == {} and batch["X"].shape == (8, 20)
 
     calls.update(X=0, tiles=0)
-    batch = next(iter(Loader(table=False, images=["img"], batch_size=8).use_collection(collection)))
+    batch = next(iter(Loader(table=False, images=["img"], batch_size=8, prefetch=False).use_collection(collection)))
     assert calls["X"] == 0 and calls["tiles"] > 0
     assert batch["X"] is None and batch["var"] is None
 

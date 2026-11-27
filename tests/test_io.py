@@ -7,6 +7,8 @@ import zarr
 from spatialbatch import Loader, SpatialDatasetCollection
 from spatialbatch.utils import morton_order
 
+from .conftest import reference_tile
+
 TILE = 32
 TILES = {"tile_dim_in_units": TILE}
 KW = {"region": "cells"}
@@ -47,7 +49,8 @@ def test_rows_are_sorted_along_a_z_curve(collection):
     collection, raws = collection
     group = next(iter(collection))
     spatial = np.asarray(group["obsm"]["spatial"][...]) * 2
-    np.testing.assert_array_equal(morton_order(spatial[:, 0], spatial[:, 1], 64), np.arange(200))
+    origin = np.asarray(group["obsm"]["tile_origin"][...])  # the loader reads windows of tile origins
+    np.testing.assert_array_equal(morton_order(origin[:, 0], origin[:, 1], 64), np.arange(200))
     random_gap = np.linalg.norm(np.diff(raws[0]["centers"], axis=0), axis=1).mean()
     assert np.linalg.norm(np.diff(spatial, axis=0), axis=1).mean() < 0.7 * random_gap
 
@@ -99,6 +102,34 @@ def test_collection_matches_in_place_loading(collection, synthetic):
                 np.testing.assert_array_equal(batch["images"]["img"][row], by_id[key])
                 compared += 1
     assert compared == 200
+
+
+def test_add_sdatas_accepts_a_subset_of_a_backed_sdata(synthetic, tmp_path):
+    sdata, raw = synthetic
+    keep = np.arange(sdata.tables["table"].n_obs) % 3 == 0  # e.g. the spots in tissue
+    kept_ids = raw["ids"][keep]
+    table = sdata.tables["table"][keep].copy()
+    circles = sdata["cells"].loc[kept_ids]
+    del sdata["cells"]
+    sdata["cells"] = circles
+    sdata.tables["table"] = table
+    assert sdata.is_backed()
+
+    collection = SpatialDatasetCollection(tmp_path / "subset.zarr")
+    collection.add_sdatas([sdata], images=["img"], block_px=64, image_chunk=32, image_shard=128, **KW, **TILES)
+
+    group = next(iter(collection))
+    assert group["obsm"]["tile_origin"].shape == (keep.sum(), 2)
+    written = collection.obs()
+    assert set(written["instance_id"]) == set(kept_ids)
+    # the tile of every kept row is the one of its cell in the full image
+    loader = Loader(
+        table=False, images=["img"], batch_size=10, chunk_size=10, preload_nchunks=2, tile_dim_in_units=TILE
+    )
+    for batch in loader.use_collection(collection):
+        for row, instance in enumerate(batch["obs"]["instance_id"]):
+            cx, cy = raw["centers"][int(str(instance).split("-")[1])]
+            np.testing.assert_array_equal(batch["images"]["img"][row], reference_tile(raw["image"], cx, cy))
 
 
 def test_collection_errors(synthetic, tmp_path):
